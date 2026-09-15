@@ -1,0 +1,59 @@
+import { CHAT_LIMITS, type ChatRequestBody } from "@/lib/chat/types";
+
+export type ParseResult<T> = { ok: true; data: T } | { ok: false; message: string };
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID_PATTERN.test(value);
+}
+
+/** Validates a single user turn. Returns trimmed content within limits. */
+export function parseContent(
+  value: unknown,
+  maxLength: number = CHAT_LIMITS.maxMessageLength,
+): ParseResult<string> {
+  if (typeof value !== "string") return { ok: false, message: "content must be a string." };
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return { ok: false, message: "content must not be empty." };
+  if (trimmed.length > maxLength) {
+    return { ok: false, message: `content exceeds ${maxLength} characters.` };
+  }
+  return { ok: true, data: trimmed };
+}
+
+/** Validates an untrusted POST /api/chat body. */
+export function parseChatRequest(body: unknown): ParseResult<ChatRequestBody> {
+  if (!isRecord(body)) return { ok: false, message: "Request body must be a JSON object." };
+
+  const { conversationId, model, retry } = body;
+  if (conversationId !== undefined && !isUuid(conversationId)) {
+    return { ok: false, message: "conversationId must be a UUID." };
+  }
+  if (model !== undefined && typeof model !== "string") {
+    return { ok: false, message: "model must be a string." };
+  }
+
+  if (retry === true) {
+    if (!conversationId) return { ok: false, message: "retry requires a conversationId." };
+    return { ok: true, data: { conversationId, model, retry: true } };
+  }
+
+  const content = parseContent(body.content);
+  if (!content.ok) return content;
+
+  return { ok: true, data: { content: content.data, conversationId, model } };
+}
+
+/** Derives a short, readable title from the first user message. */
+export function titleFromContent(content: string): string {
+  const oneLine = content.replace(/\s+/g, " ").trim();
+  if (oneLine.length <= CHAT_LIMITS.maxTitleLength) return oneLine;
+  const cut = oneLine.slice(0, CHAT_LIMITS.maxTitleLength);
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${lastSpace > 24 ? cut.slice(0, lastSpace) : cut}…`;
+}
