@@ -34,12 +34,26 @@ Next.js 16 · React 19 · TypeScript · Tailwind CSS v4 · shadcn/ui · Lucide �
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `GEMINI_API_KEY` | Yes | Gemini API key. **Server-only**; never exposed to the browser. |
-| `GEMINI_MODEL` | No | Overrides the default model (must be on the allowlist in `lib/gemini/models.ts`). |
+| `GEMINI_API_KEY` | Yes | Google Gemini. **Server-only**; never exposed to the browser. |
+| `GEMINI_MODEL` | No | Default model as `provider:model` (default `gemini:gemini-3.6-flash`). |
+| `GROQ_API_KEY` | No | Enables Groq. Models discovered live from `/models`. |
+| `OPENROUTER_API_KEY` | No | Enables OpenRouter (curated `:free` models in `lib/ai/models.ts`). |
+| `OPENROUTER_SITE_URL`, `OPENROUTER_APP_NAME` | No | Optional OpenRouter attribution headers. |
+| `HF_TOKEN` | No | Enables Hugging Face Inference Providers (router). |
+| `OLLAMA_BASE_URL` | No | Enables Ollama, e.g. `http://localhost:11434`; models discovered from `/api/tags`. |
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL (public). |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes | Supabase publishable key (public by design; RLS protects data). |
 
-The Supabase **service-role** key is never used anywhere in this project.
+All provider keys are read only in `lib/ai/providers.ts` (`server-only`). The browser receives
+model ids and labels, never keys. The Supabase **service-role** key is never used.
+
+## AI providers
+
+`lib/ai/` is the provider layer. Model ids are `provider:model` (bare ids are treated as
+Gemini for backward compatibility). Gemini uses its native SDK; Groq, OpenRouter, Hugging
+Face and Ollama share one OpenAI-compatible streaming client. The chat composer and Settings
+show only providers whose keys are configured. To add or change curated models, edit
+`MODEL_CATALOG` in `lib/ai/models.ts`.
 
 ## Database
 

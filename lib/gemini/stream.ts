@@ -2,27 +2,11 @@ import "server-only";
 
 import { ApiError, FinishReason, type Content } from "@google/genai";
 
-import type { ChatErrorCode, ChatRole, TokenUsage } from "@/lib/chat/types";
+import type { GenerationEvent, GenerationOptions, GenerationTurn } from "@/lib/ai/types";
+import type { ChatErrorCode, TokenUsage } from "@/lib/chat/types";
 import { GeminiNotConfiguredError, getGeminiClient } from "@/lib/gemini/client";
 
-export interface GenerationTurn {
-  role: ChatRole;
-  content: string;
-}
-
-export interface GenerationOptions {
-  model: string;
-  systemInstruction: string;
-  turns: GenerationTurn[];
-  signal?: AbortSignal;
-  temperature?: number;
-}
-
-/** Events yielded by streamGeneration. Always ends with `done` or `error`. */
-export type GenerationEvent =
-  | { type: "text"; text: string }
-  | { type: "error"; code: ChatErrorCode; message: string }
-  | { type: "done"; usage?: TokenUsage };
+export type { GenerationEvent, GenerationOptions, GenerationTurn };
 
 /** Finish reasons that mean the model stopped for a content-policy reason. */
 const BLOCKED_FINISH_REASONS: ReadonlySet<FinishReason> = new Set([
@@ -84,8 +68,11 @@ function mapApiError(error: ApiError): { code: ChatErrorCode; message: string } 
 /**
  * Streams one Gemini generation as events. Always terminates with `done`
  * (carrying token usage when Gemini reports it) or `error`.
+ *
+ * `options.model` is Gemini's bare model id (the provider prefix is stripped
+ * by lib/ai/generate.ts).
  */
-export async function* streamGeneration(
+export async function* streamGemini(
   options: GenerationOptions,
 ): AsyncGenerator<GenerationEvent, void, undefined> {
   const { model, systemInstruction, turns, signal, temperature } = options;

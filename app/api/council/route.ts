@@ -22,8 +22,9 @@ import {
   upsertCouncilOpinion,
 } from "@/lib/data/council";
 import type { MessageStatus } from "@/lib/data/types";
-import { resolveModel } from "@/lib/gemini/models";
-import { streamGeneration } from "@/lib/gemini/stream";
+import { streamGeneration } from "@/lib/ai/generate";
+import { parseModelId, resolveModel } from "@/lib/ai/models";
+import { isProviderEnabled, providerNotConfiguredMessage } from "@/lib/ai/providers";
 import { consumeRequest } from "@/lib/limits/consume";
 
 // Five sequential-ish model calls; allow more headroom than a single chat turn.
@@ -72,6 +73,10 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (!question.ok) return errorResponse(400, "invalid_request", question.message.replace("content", "question"));
 
   const model = resolveModel(body.model, await getDefaultModelFor(supabase, user.id));
+  const { provider } = parseModelId(model);
+  if (!isProviderEnabled(provider)) {
+    return errorResponse(400, "not_configured", providerNotConfiguredMessage(provider));
+  }
 
   const limit = await consumeRequest(supabase, "council");
   if (!limit.allowed) return limitResponse(limit);

@@ -6,8 +6,8 @@ import { updatePassword, updatePreferences, updateProfile, type AuthActionState 
 import { Feedback } from "@/components/auth/feedback";
 import { Field } from "@/components/auth/field";
 import { SubmitButton } from "@/components/auth/submit-button";
-import { MODEL_OPTIONS } from "@/lib/gemini/models";
-import { cn } from "@/lib/utils";
+import { describeModel, groupByProvider, qualifyModelId } from "@/lib/ai/models";
+import type { ModelOption } from "@/lib/ai/types";
 
 const EMPTY: AuthActionState = {};
 
@@ -32,42 +32,54 @@ export function ProfileForm({ displayName }: { displayName: string | null }) {
   );
 }
 
-export function PreferencesForm({ defaultModel }: { defaultModel: string }) {
+export function PreferencesForm({
+  defaultModel,
+  models,
+}: {
+  defaultModel: string;
+  models: readonly ModelOption[];
+}) {
   const [state, action, pending] = useActionState(updatePreferences, EMPTY);
-  const groupId = useId();
+  const selectId = useId();
+  const current = qualifyModelId(defaultModel);
+  const known = models.some((m) => m.id === current);
+  const described = describeModel(current, models);
+
   return (
     <form action={action} className="space-y-4">
-      <fieldset className="space-y-2" aria-describedby={`${groupId}-hint`}>
-        <legend className="text-[13px] text-muted-foreground">Default model</legend>
-        <div className="grid gap-2 sm:grid-cols-3">
-          {MODEL_OPTIONS.map((m) => (
-            <label
-              key={m.id}
-              className={cn(
-                "flex cursor-pointer flex-col gap-1 rounded-lg border bg-background/40 px-3.5 py-3 transition-colors",
-                "has-[:checked]:border-border-strong has-[:checked]:bg-raised hover:border-border-strong",
-                "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring",
-              )}
-            >
-              <span className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="default_model"
-                  value={m.id}
-                  defaultChecked={m.id === defaultModel}
-                  disabled={pending}
-                  className="size-3.5 accent-[var(--brand)]"
-                />
-                <span className="text-sm font-medium">{m.label}</span>
-              </span>
-              <span className="text-xs text-muted-foreground">{m.description}</span>
-            </label>
+      <div className="space-y-2">
+        <label htmlFor={selectId} className="text-[13px] text-muted-foreground">
+          Default provider and model
+        </label>
+        <select
+          id={selectId}
+          name="default_model"
+          defaultValue={current}
+          disabled={pending || models.length === 0}
+          aria-describedby={`${selectId}-hint`}
+          className="h-10 w-full rounded-md border border-border bg-background/40 px-3 text-sm text-foreground outline-none transition-colors focus-visible:border-border-strong focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50"
+        >
+          {!known ? (
+            <option value={current} className="bg-raised">
+              {described.providerLabel} · {described.label} (unavailable)
+            </option>
+          ) : null}
+          {groupByProvider(models).map((group) => (
+            <optgroup key={group.provider} label={group.label} className="bg-raised text-muted-foreground">
+              {group.models.map((m) => (
+                <option key={m.id} value={m.id} className="bg-raised text-foreground">
+                  {m.label}
+                  {m.description ? ` — ${m.description}` : ""}
+                </option>
+              ))}
+            </optgroup>
           ))}
-        </div>
-        <p id={`${groupId}-hint`} className="text-xs text-subtle">
-          Used for new chats and Council sessions. You can switch per conversation.
+        </select>
+        <p id={`${selectId}-hint`} className="text-xs text-subtle">
+          Used for new chats and Council sessions. You can switch per conversation. Providers appear here once
+          their API key is configured on the server.
         </p>
-      </fieldset>
+      </div>
       <Feedback state={state} />
       <SubmitButton pending={pending} pendingLabel="Saving…" className="w-auto px-5" variant="secondary">
         Save

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/shell/app-shell";
 import { ShellProvider } from "@/components/shell/shell-context";
+import { getAvailableModels } from "@/lib/ai/discovery";
 import { getSession } from "@/lib/auth/session";
 import { getProfile } from "@/lib/data/account";
 import { listConversations } from "@/lib/data/conversations";
@@ -12,15 +13,18 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   const { supabase, user } = await getSession();
   if (!user) redirect("/login");
 
-  const [conversations, councilSessions, profile] = await Promise.all([
+  const [conversations, councilSessions, profile, models] = await Promise.all([
     listConversations(supabase).catch(() => []),
     listCouncilSessions(supabase).catch(() => []),
     getProfile(supabase, user.id).catch(() => null),
+    // Only ids/labels cross to the client — never keys or config.
+    getAvailableModels().catch(() => []),
   ]);
 
   return (
     <ShellProvider
       user={{ id: user.id, email: user.email, displayName: profile?.display_name ?? null }}
+      models={models}
       initialConversations={conversations}
       initialCouncilSessions={councilSessions}
     >

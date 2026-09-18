@@ -4,6 +4,7 @@ import { useId, useRef, useState, type FormEvent, type KeyboardEvent } from "rea
 import { ArrowUp, Square } from "lucide-react";
 
 import { ModelSelect } from "@/components/chat/model-select";
+import { useShell } from "@/components/shell/shell-context";
 import { CHAT_LIMITS } from "@/lib/chat/types";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +31,7 @@ export function Composer({
   maxLength = CHAT_LIMITS.maxMessageLength,
   hint = "Enter to send · Shift+Enter for a new line",
 }: ComposerProps) {
+  const { models } = useShell();
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const labelId = useId();
@@ -100,7 +102,7 @@ export function Composer({
           className="scrollbar-thin block max-h-[220px] w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-[15px] leading-relaxed text-foreground outline-none placeholder:text-subtle"
         />
         <div className="flex items-center justify-between gap-2 px-2 pb-2">
-          <ModelSelect value={model} onChange={onModelChange} disabled={isBusy} />
+          <ModelSelect value={model} onChange={onModelChange} models={models} disabled={isBusy} />
           <div className="flex items-center gap-2">
             <span
               className={cn("hidden text-[11px] tabular-nums sm:inline", isTooLong ? "text-destructive" : "text-subtle")}

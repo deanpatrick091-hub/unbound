@@ -4,9 +4,10 @@ import { redirect } from "next/navigation";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { PasswordForm, PreferencesForm, ProfileForm } from "@/components/settings/settings-forms";
 import { UsagePanel } from "@/components/settings/usage-panel";
+import { getAvailableModels } from "@/lib/ai/discovery";
+import { DEFAULT_MODEL_ID, resolveModel } from "@/lib/ai/models";
 import { getSession } from "@/lib/auth/session";
 import { getPreferences, getProfile, getUsageSummary } from "@/lib/data/account";
-import { DEFAULT_MODEL_ID, resolveModel } from "@/lib/gemini/models";
 
 export const metadata: Metadata = { title: "Settings · UNBOUND" };
 
@@ -14,10 +15,11 @@ export default async function SettingsPage() {
   const { supabase, user } = await getSession();
   if (!user) redirect("/login");
 
-  const [profile, prefs, usage] = await Promise.all([
+  const [profile, prefs, usage, models] = await Promise.all([
     getProfile(supabase, user.id).catch(() => null),
     getPreferences(supabase, user.id).catch(() => null),
     getUsageSummary(supabase).catch(() => null),
+    getAvailableModels().catch(() => []),
   ]);
 
   return (
@@ -37,7 +39,7 @@ export default async function SettingsPage() {
           </Section>
 
           <Section title="Preferences" description="Defaults for new conversations.">
-            <PreferencesForm defaultModel={resolveModel(prefs?.default_model, DEFAULT_MODEL_ID)} />
+            <PreferencesForm defaultModel={resolveModel(prefs?.default_model, DEFAULT_MODEL_ID)} models={models} />
           </Section>
 
           <Section title="Usage" description="Free-plan budgets reset daily and monthly (UTC).">

@@ -15,8 +15,9 @@ import {
   updateConversationModel,
 } from "@/lib/data/conversations";
 import type { MessageStatus } from "@/lib/data/types";
-import { resolveModel } from "@/lib/gemini/models";
-import { streamGeneration, type GenerationTurn } from "@/lib/gemini/stream";
+import { streamGeneration, type GenerationTurn } from "@/lib/ai/generate";
+import { parseModelId, resolveModel } from "@/lib/ai/models";
+import { isProviderEnabled, providerNotConfiguredMessage } from "@/lib/ai/providers";
 import { consumeRequest } from "@/lib/limits/consume";
 
 // Gemini responses can run longer than the default serverless timeout.
@@ -55,6 +56,10 @@ export async function POST(request: NextRequest): Promise<Response> {
     requestedModel,
     conversation?.model ?? (await getDefaultModelFor(supabase, user.id)),
   );
+  const { provider } = parseModelId(model);
+  if (!isProviderEnabled(provider)) {
+    return errorResponse(400, "not_configured", providerNotConfiguredMessage(provider));
+  }
 
   // Usage protection — server-side, atomic, fails closed.
   const limit = await consumeRequest(supabase, "chat");

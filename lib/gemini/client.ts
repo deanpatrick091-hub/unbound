@@ -2,7 +2,7 @@ import "server-only";
 
 import { GoogleGenAI } from "@google/genai";
 
-import { DEFAULT_MODEL_ID, resolveModel } from "@/lib/gemini/models";
+import { DEFAULT_MODEL_ID, resolveModel } from "@/lib/ai/models";
 
 /**
  * Server-only Gemini client.

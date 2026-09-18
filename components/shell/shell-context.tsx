@@ -2,6 +2,8 @@
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 
+import type { ModelOption } from "@/lib/ai/types";
+
 export interface ConversationSummary {
   id: string;
   title: string;
@@ -24,6 +26,8 @@ export interface ShellUser {
 
 interface ShellContextValue {
   user: ShellUser;
+  /** Models the server can serve right now (providers with keys configured). */
+  models: ModelOption[];
   conversations: ConversationSummary[];
   councilSessions: CouncilSummary[];
   refreshConversations: () => Promise<void>;
@@ -41,6 +45,7 @@ const ShellContext = createContext<ShellContextValue | null>(null);
 
 interface ShellProviderProps {
   user: ShellUser;
+  models: ModelOption[];
   initialConversations: ConversationSummary[];
   initialCouncilSessions: CouncilSummary[];
   children: ReactNode;
@@ -48,6 +53,7 @@ interface ShellProviderProps {
 
 export function ShellProvider({
   user,
+  models,
   initialConversations,
   initialCouncilSessions,
   children,
@@ -97,6 +103,7 @@ export function ShellProvider({
   const value = useMemo<ShellContextValue>(
     () => ({
       user,
+      models,
       conversations,
       councilSessions,
       refreshConversations,
@@ -110,6 +117,7 @@ export function ShellProvider({
     }),
     [
       user,
+      models,
       conversations,
       councilSessions,
       refreshConversations,

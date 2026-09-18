@@ -7,8 +7,8 @@ import { Composer } from "@/components/chat/composer";
 import { MessageList } from "@/components/chat/message-list";
 import { useShell } from "@/components/shell/shell-context";
 import { useChat, type ChatStatus } from "@/hooks/use-chat";
+import { describeModel } from "@/lib/ai/models";
 import type { ChatMessage } from "@/lib/chat/types";
-import { MODEL_OPTIONS } from "@/lib/gemini/models";
 
 interface ChatScreenProps {
   conversationId: string | null;
@@ -25,7 +25,7 @@ const STATUS_ANNOUNCEMENTS: Record<ChatStatus, string> = {
 };
 
 export function ChatScreen({ conversationId, title, initialMessages, model }: ChatScreenProps) {
-  const { user, upsertConversation, refreshConversations } = useShell();
+  const { user, models, upsertConversation, refreshConversations } = useShell();
 
   const onConversationCreated = useCallback(
     (created: { id: string; title: string }) => {
@@ -46,13 +46,15 @@ export function ChatScreen({ conversationId, title, initialMessages, model }: Ch
   });
 
   const activeTitle = title ?? (chat.conversationId ? "Chat" : null);
-  const modelLabel = MODEL_OPTIONS.find((m) => m.id === chat.model)?.label ?? chat.model;
+  const described = describeModel(chat.model, models);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="hidden h-14 shrink-0 items-center justify-between border-b px-6 lg:flex">
         <h1 className="truncate text-sm font-medium text-foreground">{activeTitle ?? "New chat"}</h1>
-        <span className="text-xs text-subtle">{modelLabel}</span>
+        <span className="truncate text-xs text-subtle" title={`${described.providerLabel} · ${described.label}`}>
+          <span className="text-muted-foreground">{described.providerLabel}</span> · {described.label}
+        </span>
       </div>
 
       <MessageList
