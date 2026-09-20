@@ -41,7 +41,8 @@ function option(provider: ProviderId, model: string, label: string, description?
 /**
  * Curated catalog. Gemini ids are verified against this key; Groq and Ollama
  * are also discovered live (see lib/ai/discovery.ts); OpenRouter and Hugging
- * Face entries are their free-tier models as listed on 2026-09-18.
+ * Face entries are their free-tier models as listed on 2026-09-20. OpenRouter
+ * rotates its ":free" tier, so expect to refresh these occasionally.
  */
 export const MODEL_CATALOG: readonly ModelOption[] = [
   option("gemini", "gemini-3.6-flash", "Gemini 3.6 Flash", "Fast, balanced — the default."),
@@ -53,7 +54,7 @@ export const MODEL_CATALOG: readonly ModelOption[] = [
   option("groq", "openai/gpt-oss-120b", "GPT-OSS 120B", "OpenAI open-weight reasoning model."),
   option("groq", "openai/gpt-oss-20b", "GPT-OSS 20B", "Lighter open-weight model."),
 
-  option("openrouter", "deepseek/deepseek-v4-flash-0731:free", "DeepSeek V4 Flash", "1M context, free tier."),
+  option("openrouter", "nvidia/nemotron-3.5-lightning:free", "Nemotron 3.5 Lightning", "1M context, free tier."),
   option("openrouter", "google/gemma-4-31b-it:free", "Gemma 4 31B", "Google open model, free tier."),
   option("openrouter", "qwen/qwen3.8-27b:free", "Qwen 3.8 27B", "Free tier."),
   option("openrouter", "nvidia/nemotron-3-super-120b-a12b:free", "Nemotron 3 Super 120B", "Free tier."),
