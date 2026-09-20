@@ -14,7 +14,7 @@ import {
   listRecentMessages,
   updateConversationModel,
 } from "@/lib/data/conversations";
-import type { MessageStatus } from "@/lib/data/types";
+import type { ConversationRow, MessageStatus } from "@/lib/data/types";
 import { streamGeneration, type GenerationTurn } from "@/lib/ai/generate";
 import { parseModelId, resolveModel } from "@/lib/ai/models";
 import { isProviderEnabled, providerNotConfiguredMessage } from "@/lib/ai/providers";
@@ -47,9 +47,17 @@ export async function POST(request: NextRequest): Promise<Response> {
   const content = parsed.data.retry === true ? null : parsed.data.content;
 
   // Resolve the conversation (RLS makes another user's id look like "not found").
-  let conversation = requestedId ? await getConversation(supabase, requestedId) : null;
-  if (requestedId && !conversation) {
-    return errorResponse(404, "not_found", "That conversation doesn't exist.");
+  // A storage outage here is treated as "no stored conversation", not a hard error.
+  let conversation: ConversationRow | null = null;
+  let storageAvailable = true;
+  if (requestedId) {
+    try {
+      conversation = await getConversation(supabase, requestedId);
+      if (!conversation) return errorResponse(404, "not_found", "That conversation doesn't exist.");
+    } catch (error) {
+      console.warn("[chat] storage unavailable while loading conversation:", error);
+      storageAvailable = false;
+    }
   }
 
   const model = resolveModel(
@@ -61,54 +69,73 @@ export async function POST(request: NextRequest): Promise<Response> {
     return errorResponse(400, "not_configured", providerNotConfiguredMessage(provider));
   }
 
-  // Usage protection — server-side, atomic, fails closed.
+  // Usage protection — server-side and atomic when available. An unreachable
+  // limiter lets the request through (logged); an over-budget verdict does not.
   const limit = await consumeRequest(supabase, "chat");
   if (!limit.allowed) return limitResponse(limit);
 
+  // Persistence is best-effort: if the database can't store this turn, the
+  // reply is still generated and streamed, just not saved.
   let createdTitle: string | undefined;
-  try {
-    if (!conversation) {
-      createdTitle = titleFromContent(content ?? "");
-      conversation = await createConversation(supabase, { userId: user.id, title: createdTitle, model });
-    } else if (conversation.model !== model) {
-      await updateConversationModel(supabase, conversation.id, model);
+  if (storageAvailable) {
+    try {
+      if (!conversation) {
+        createdTitle = titleFromContent(content ?? "");
+        conversation = await createConversation(supabase, { userId: user.id, title: createdTitle, model });
+      } else if (conversation.model !== model) {
+        await updateConversationModel(supabase, conversation.id, model);
+      }
+    } catch (error) {
+      console.warn("[chat] storage unavailable — continuing without persistence:", error);
+      storageAvailable = false;
+      conversation = null;
+      createdTitle = undefined;
     }
-  } catch (error) {
-    console.error("[chat] conversation setup failed:", error);
-    return errorResponse(500, "storage_error", "Could not start the conversation. Please try again.");
   }
 
   let userMessageId: string | undefined;
-  let turns: GenerationTurn[];
-  try {
-    if (content !== null) {
-      const saved = await insertMessage(supabase, {
-        conversationId: conversation.id,
-        userId: user.id,
-        role: "user",
-        content,
-      });
-      userMessageId = saved.id;
+  let turns: GenerationTurn[] = [];
+  if (storageAvailable && conversation) {
+    try {
+      if (content !== null) {
+        const saved = await insertMessage(supabase, {
+          conversationId: conversation.id,
+          userId: user.id,
+          role: "user",
+          content,
+        });
+        userMessageId = saved.id;
+      }
+      const history = await listRecentMessages(supabase, conversation.id);
+      turns = history
+        // Failed/empty assistant turns add nothing useful to the context.
+        .filter((m) => m.role === "user" || (m.status !== "error" && m.content.length > 0))
+        .map((m) => ({ role: m.role, content: m.content }));
+    } catch (error) {
+      console.warn("[chat] storage unavailable — continuing without persistence:", error);
+      storageAvailable = false;
+      conversation = null;
+      userMessageId = undefined;
+      turns = [];
     }
+  }
 
-    const history = await listRecentMessages(supabase, conversation.id);
-    turns = history
-      // Failed/empty assistant turns add nothing useful to the context.
-      .filter((m) => m.role === "user" || (m.status !== "error" && m.content.length > 0))
-      .map((m) => ({ role: m.role, content: m.content }));
+  if (!storageAvailable) {
+    // Ephemeral mode: context comes from the client's own copy of the thread.
+    const fallback = parsed.data.retry === true ? [] : (parsed.data.history ?? []);
+    turns = fallback.filter((t) => t.content.length > 0).map((t) => ({ role: t.role, content: t.content }));
+    if (content !== null) turns.push({ role: "user", content });
+  }
 
-    const last = turns[turns.length - 1];
-    if (!last || last.role !== "user") {
-      return errorResponse(400, "invalid_request", "There is no pending user message to reply to.");
-    }
-  } catch (error) {
-    console.error("[chat] message persistence failed:", error);
-    return errorResponse(500, "storage_error", "Could not save your message. Please try again.");
+  const last = turns[turns.length - 1];
+  if (!last || last.role !== "user") {
+    return errorResponse(400, "invalid_request", "There is no pending user message to reply to.");
   }
 
   const abort = new AbortController();
   const encoder = new TextEncoder();
-  const { id: conversationId } = conversation;
+  const conversationId = conversation?.id;
+  const persisted = storageAvailable && conversationId !== undefined;
   let closed = false;
 
   const stream = new ReadableStream<Uint8Array>({
@@ -132,7 +159,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       };
 
       const run = async () => {
-        send({ type: "meta", conversationId, title: createdTitle, userMessageId, model });
+        send({ type: "meta", conversationId, title: createdTitle, userMessageId, model, persisted });
 
         let text = "";
         let status: MessageStatus = "complete";
@@ -167,9 +194,11 @@ export async function POST(request: NextRequest): Promise<Response> {
         }
 
         // Persist whatever we have (partial output on cancel/error is kept so
-        // the user can see it in history).
+        // the user can see it in history). A save failure never turns a good
+        // reply into an error — the client already announced persisted=false
+        // or will see the reply either way.
         let assistantMessageId: string | undefined;
-        if (text.length > 0) {
+        if (persisted && conversationId && text.length > 0) {
           try {
             const saved = await insertMessage(supabase, {
               conversationId,
@@ -181,19 +210,11 @@ export async function POST(request: NextRequest): Promise<Response> {
             });
             assistantMessageId = saved.id;
           } catch (error) {
-            console.error("[chat] assistant persistence failed:", error);
-            if (status === "complete") {
-              failure = {
-                type: "error",
-                code: "storage_error",
-                message: "The reply was generated but could not be saved to your history.",
-              };
-              status = "error";
-            }
+            console.warn("[chat] assistant persistence failed:", error);
           }
         }
 
-        if (usage) {
+        if (usage && persisted) {
           await insertUsage(supabase, {
             userId: user.id,
             feature: "chat",

@@ -1,4 +1,4 @@
-import type { NextRequest } from "next/server";
+﻿import type { NextRequest } from "next/server";
 
 import { errorResponse, limitResponse, NDJSON_HEADERS } from "@/lib/api/responses";
 import { getSession } from "@/lib/auth/session";
@@ -30,7 +30,7 @@ import { consumeRequest } from "@/lib/limits/consume";
 // Five sequential-ish model calls; allow more headroom than a single chat turn.
 export const maxDuration = 120;
 
-/** GET /api/council — the caller's Council sessions, newest first. */
+/** GET /api/council â€” the caller's Council sessions, newest first. */
 export async function GET(): Promise<Response> {
   const { supabase, user } = await getSession();
   if (!user) return errorResponse(401, "unauthorized", "Sign in to continue.");
@@ -50,7 +50,7 @@ interface MemberResult {
 }
 
 /**
- * POST /api/council — orchestrates one Council run.
+ * POST /api/council â€” orchestrates one Council run.
  *
  * Four perspectives run concurrently with independent system instructions;
  * their deltas are multiplexed onto one NDJSON stream. The Judge then
@@ -81,22 +81,27 @@ export async function POST(request: NextRequest): Promise<Response> {
   const limit = await consumeRequest(supabase, "council");
   if (!limit.allowed) return limitResponse(limit);
 
-  let session;
+  // Persistence is best-effort: without storage the run still happens, it just
+  // won't appear in Council history.
+  const title = titleFromContent(question.data);
+  let sessionId: string;
+  let persisted = true;
   try {
-    session = await createCouncilSession(supabase, {
+    const session = await createCouncilSession(supabase, {
       userId: user.id,
-      title: titleFromContent(question.data),
+      title,
       question: question.data,
       model,
     });
+    sessionId = session.id;
   } catch (error) {
-    console.error("[council] session create failed:", error);
-    return errorResponse(500, "storage_error", "Could not start the Council session.");
+    console.warn("[council] storage unavailable â€” running without persistence:", error);
+    sessionId = crypto.randomUUID();
+    persisted = false;
   }
 
   const abort = new AbortController();
   const encoder = new TextEncoder();
-  const sessionId = session.id;
   const userId = user.id;
   let closed = false;
 
@@ -144,7 +149,7 @@ export async function POST(request: NextRequest): Promise<Response> {
             totalUsage.promptTokens += event.usage.promptTokens;
             totalUsage.completionTokens += event.usage.completionTokens;
             totalUsage.totalTokens += event.usage.totalTokens;
-            await insertUsage(supabase, {
+            if (persisted) await insertUsage(supabase, {
               userId,
               feature: "council",
               councilSessionId: sessionId,
@@ -159,13 +164,13 @@ export async function POST(request: NextRequest): Promise<Response> {
           message = "No response was produced.";
         }
 
-        await upsertCouncilOpinion(supabase, { sessionId, userId, role, content: text, status });
+        if (persisted) await upsertCouncilOpinion(supabase, { sessionId, userId, role, content: text, status });
         send({ type: "member_done", role, status, message });
         return { role, text, status };
       };
 
       const run = async () => {
-        send({ type: "session", sessionId, title: session.title, model });
+        send({ type: "session", sessionId, title, model, persisted });
         send({ type: "phase", phase: "perspectives" });
 
         const perspectives = await Promise.all(
@@ -199,14 +204,14 @@ export async function POST(request: NextRequest): Promise<Response> {
           }
         }
 
-        await setCouncilSessionStatus(supabase, sessionId, finalStatus);
+        if (persisted) await setCouncilSessionStatus(supabase, sessionId, finalStatus);
         if (finalStatus !== "cancelled") send({ type: "done", status: finalStatus, usage: totalUsage });
         close();
       };
 
       run().catch(async (error) => {
         console.error("[council] runner crashed:", error);
-        await setCouncilSessionStatus(supabase, sessionId, "error");
+        if (persisted) await setCouncilSessionStatus(supabase, sessionId, "error");
         send({ type: "error", code: "upstream_error", message: "The Council run failed. Please try again." });
         close();
       });

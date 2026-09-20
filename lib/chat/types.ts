@@ -19,6 +19,12 @@ export interface ChatMessage {
  * POST /api/chat request. History is loaded server-side from the database —
  * the browser never supplies prior turns.
  */
+/** A prior turn supplied by the client. Only used when the server cannot load history itself. */
+export interface ChatHistoryTurn {
+  role: ChatRole;
+  content: string;
+}
+
 export type ChatRequestBody =
   | {
       /** Omit to start a new conversation. */
@@ -26,6 +32,11 @@ export type ChatRequestBody =
       content: string;
       /** Validated against the server allowlist; falls back to the user's default. */
       model?: string;
+      /**
+       * Fallback context for when persistence is unavailable. Ignored whenever
+       * the conversation exists in the database (that history is authoritative).
+       */
+      history?: ChatHistoryTurn[];
       retry?: false;
     }
   | {
@@ -51,12 +62,15 @@ export interface TokenUsage {
 export type ChatStreamEvent =
   | {
       type: "meta";
-      conversationId: string;
+      /** Absent when the turn could not be persisted (ephemeral reply). */
+      conversationId?: string;
       /** Present when this request created the conversation. */
       title?: string;
       /** Absent on retry (no new user turn was stored). */
       userMessageId?: string;
       model: string;
+      /** False when the database was unavailable and nothing was saved. */
+      persisted: boolean;
     }
   | { type: "text"; text: string }
   | { type: "error"; code: ChatErrorCode; message: string }

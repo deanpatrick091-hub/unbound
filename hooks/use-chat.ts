@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import type {
   ChatErrorCode,
+  ChatHistoryTurn,
   ChatMessage,
   ChatRequestBody,
   ChatStreamEvent,
@@ -34,6 +35,8 @@ export interface UseChatResult {
   status: ChatStatus;
   error: ChatError | null;
   isBusy: boolean;
+  /** False once the server reports it could not save this thread (storage outage). */
+  persisted: boolean;
   model: string;
   setModel: (model: string) => void;
   sendMessage: (content: string) => Promise<void>;
@@ -46,12 +49,23 @@ function createMessage(role: ChatMessage["role"], content: string): ChatMessage 
   return { id: createId(), role, content, createdAt: Date.now() };
 }
 
+/**
+ * The thread as the client knows it, for use only if the server cannot load
+ * history itself. Failed/empty turns are dropped; the server caps the length.
+ */
+function fallbackHistory(history: ChatMessage[]): ChatHistoryTurn[] {
+  return history
+    .filter((m) => m.content.trim().length > 0 && m.status !== "error")
+    .map((m) => ({ role: m.role, content: m.content }));
+}
+
 export function useChat(options: UseChatOptions): UseChatResult {
   const router = useRouter();
   const [conversationId, setConversationId] = useState<string | null>(options.conversationId);
   const [messages, setMessages] = useState<ChatMessage[]>(options.initialMessages);
   const [status, setStatus] = useState<ChatStatus>("idle");
   const [error, setError] = useState<ChatError | null>(null);
+  const [persisted, setPersisted] = useState(true);
   const [model, setModelState] = useState(options.model);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -122,7 +136,8 @@ export function useChat(options: UseChatOptions): UseChatResult {
           if (controller.signal.aborted) return;
           switch (event.type) {
             case "meta":
-              if (!conversationRef.current) {
+              setPersisted(event.persisted);
+              if (event.persisted && event.conversationId && !conversationRef.current) {
                 conversationRef.current = event.conversationId;
                 setConversationId(event.conversationId);
                 callbacksRef.current.onConversationCreated?.({
@@ -187,6 +202,7 @@ export function useChat(options: UseChatOptions): UseChatResult {
           conversationId: conversationRef.current ?? undefined,
           content: trimmed,
           model: modelRef.current,
+          history: fallbackHistory(messagesRef.current),
         },
         user,
       );
@@ -210,7 +226,10 @@ export function useChat(options: UseChatOptions): UseChatResult {
       await run({ conversationId: conversationRef.current, model: modelRef.current, retry: true });
     } else {
       commit((prev) => prev.filter((m) => m.id !== lastUser.id));
-      await run({ content: lastUser.content, model: modelRef.current }, lastUser);
+      await run(
+        { content: lastUser.content, model: modelRef.current, history: fallbackHistory(messagesRef.current) },
+        lastUser,
+      );
     }
   }, [commit, isBusy, run]);
 
@@ -227,6 +246,7 @@ export function useChat(options: UseChatOptions): UseChatResult {
     status,
     error,
     isBusy,
+    persisted,
     model,
     setModel,
     sendMessage,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { AlertCircle, RotateCcw, X } from "lucide-react";
+import { AlertCircle, CloudOff, RotateCcw, X } from "lucide-react";
 
 import { Composer } from "@/components/chat/composer";
 import { MessageList } from "@/components/chat/message-list";
@@ -66,6 +66,16 @@ export function ChatScreen({ conversationId, title, initialMessages, model }: Ch
       <p role="status" className="sr-only">
         {STATUS_ANNOUNCEMENTS[chat.status]}
       </p>
+
+      {!chat.persisted ? (
+        <div className="mx-auto w-full max-w-3xl px-3 pb-2 sm:px-6">
+          <p role="status" className="flex items-center gap-2 text-[11px] text-subtle animate-fade-in">
+            <CloudOff aria-hidden="true" className="size-3.5" />
+            History isn&apos;t being saved right now — replies still work, but this thread won&apos;t appear in your
+            sidebar.
+          </p>
+        </div>
+      ) : null}
 
       {chat.error ? (
         <div className="mx-auto w-full max-w-3xl px-3 pb-2 sm:px-6">

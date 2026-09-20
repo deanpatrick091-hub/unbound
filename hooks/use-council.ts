@@ -103,7 +103,10 @@ export function useCouncil(options: UseCouncilOptions = {}) {
           switch (event.type) {
             case "session":
               setState((prev) => ({ ...prev, sessionId: event.sessionId, model: event.model }));
-              optionsRef.current.onSessionCreated?.({ id: event.sessionId, title: event.title });
+              // Only persisted sessions get a URL and a sidebar entry.
+              if (event.persisted) {
+                optionsRef.current.onSessionCreated?.({ id: event.sessionId, title: event.title });
+              }
               break;
             case "phase":
               setState((prev) => ({ ...prev, phase: event.phase }));

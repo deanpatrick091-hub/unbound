@@ -1,4 +1,4 @@
-import { CHAT_LIMITS, type ChatRequestBody } from "@/lib/chat/types";
+import { CHAT_LIMITS, type ChatHistoryTurn, type ChatRequestBody } from "@/lib/chat/types";
 
 export type ParseResult<T> = { ok: true; data: T } | { ok: false; message: string };
 
@@ -46,7 +46,32 @@ export function parseChatRequest(body: unknown): ParseResult<ChatRequestBody> {
   const content = parseContent(body.content);
   if (!content.ok) return content;
 
-  return { ok: true, data: { content: content.data, conversationId, model } };
+  const history = parseHistory(body.history);
+  if (!history.ok) return history;
+
+  return { ok: true, data: { content: content.data, conversationId, model, history: history.data } };
+}
+
+/**
+ * Validates optional client-supplied history: well-formed turns only, each
+ * within the message limit, and capped to the context window. Undefined when
+ * absent. Never trusted over database history.
+ */
+function parseHistory(value: unknown): ParseResult<ChatHistoryTurn[] | undefined> {
+  if (value === undefined) return { ok: true, data: undefined };
+  if (!Array.isArray(value)) return { ok: false, message: "history must be an array." };
+
+  const turns: ChatHistoryTurn[] = [];
+  for (const item of value.slice(-CHAT_LIMITS.contextMessages)) {
+    if (!isRecord(item)) return { ok: false, message: "history items must be objects." };
+    if (item.role !== "user" && item.role !== "assistant") {
+      return { ok: false, message: 'history roles must be "user" or "assistant".' };
+    }
+    const content = parseContent(item.content);
+    if (!content.ok) return { ok: false, message: `history: ${content.message}` };
+    turns.push({ role: item.role, content: content.data });
+  }
+  return { ok: true, data: turns };
 }
 
 /** Derives a short, readable title from the first user message. */

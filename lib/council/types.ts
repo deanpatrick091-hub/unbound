@@ -31,7 +31,7 @@ export const COUNCIL_LIMITS = {
 
 /** NDJSON events streamed from POST /api/council. */
 export type CouncilStreamEvent =
-  | { type: "session"; sessionId: string; title: string; model: string }
+  | { type: "session"; sessionId: string; title: string; model: string; persisted: boolean }
   | { type: "phase"; phase: "perspectives" | "judge" }
   | { type: "delta"; role: CouncilRole; text: string }
   | { type: "member_done"; role: CouncilRole; status: "complete" | "error" | "cancelled"; message?: string }
