@@ -1,5 +1,6 @@
 import "server-only";
 
+import { invalidateModelCache } from "@/lib/ai/discovery";
 import { parseModelId } from "@/lib/ai/models";
 import { streamOpenAICompatible } from "@/lib/ai/openai-compatible";
 import { getProviderConfig, providerNotConfiguredMessage } from "@/lib/ai/providers";
@@ -26,7 +27,12 @@ export async function* streamGeneration(
     return;
   }
 
-  yield* streamOpenAICompatible(config, PROVIDER_LABELS[provider], model, options);
+  yield* streamOpenAICompatible(config, PROVIDER_LABELS[provider], model, {
+    ...options,
+    // A 404 means the live catalogue has moved on; drop the cached list so
+    // the picker stops offering the model.
+    onModelUnavailable: () => invalidateModelCache(provider),
+  });
 }
 
 export type { GenerationEvent, GenerationOptions, GenerationTurn } from "@/lib/ai/types";

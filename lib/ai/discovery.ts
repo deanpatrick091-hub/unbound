@@ -5,14 +5,20 @@ import { getEnabledProviders, getProviderConfig } from "@/lib/ai/providers";
 import type { ModelOption, ProviderId } from "@/lib/ai/types";
 
 /**
- * Builds the list of models the current server can actually serve:
- * the curated catalog filtered to enabled providers, plus live discovery for
- * providers whose catalogues are small and local (Groq, Ollama).
- * Results are cached in-process briefly so the app layout stays fast.
+ * Builds the list of models the current server can actually serve.
+ *
+ * Groq, OpenRouter and Ollama are discovered live from the providers' own
+ * model endpoints and filtered structurally (modalities, pricing, activity),
+ * so nothing here depends on remembering model ids. Gemini and Hugging Face
+ * use the curated catalog. Results are cached in-process briefly so the app
+ * layout stays fast; a failed discovery falls back to the last good list.
  */
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
-const DISCOVERY_TIMEOUT_MS = 2_500;
+const DISCOVERY_TIMEOUT_MS = 4_000;
+
+/** OpenRouter's auto-routing endpoint over its free tier — a stable, documented id. */
+export const OPENROUTER_FREE_ROUTER_ID = "openrouter/free";
 
 interface CacheEntry {
   expires: number;
@@ -27,35 +33,31 @@ export async function getAvailableModels(): Promise<ModelOption[]> {
   return lists.flat();
 }
 
+/** Forces a fresh discovery next call (e.g. after a provider says a model is gone). */
+export function invalidateModelCache(provider?: ProviderId): void {
+  if (provider) cache.delete(provider);
+  else cache.clear();
+}
+
 async function modelsFor(provider: ProviderId): Promise<ModelOption[]> {
   const curated = MODEL_CATALOG.filter((m) => m.provider === provider);
-  if (provider !== "groq" && provider !== "ollama") return curated;
+  if (provider === "gemini" || provider === "huggingface") return curated;
 
   const cached = cache.get(provider);
   if (cached && cached.expires > Date.now()) return cached.models;
 
-  let discovered: ModelOption[] = [];
   try {
-    discovered = provider === "groq" ? await discoverGroq() : await discoverOllama();
+    const models =
+      provider === "groq" ? await discoverGroq() : provider === "openrouter" ? await discoverOpenRouter() : await discoverOllama();
+    cache.set(provider, { expires: Date.now() + CACHE_TTL_MS, models });
+    return models;
   } catch (error) {
     console.warn(`[models] ${provider} discovery failed:`, error instanceof Error ? error.message : error);
+    // Stale-while-error: keep serving the last good list if we have one.
+    if (cached) return cached.models;
+    // OpenRouter's router id is stable even when its catalogue can't be read.
+    return provider === "openrouter" ? [openRouterRouterOption(200_000)] : [];
   }
-
-  // Discovery succeeded: keep curated entries the provider still serves (they
-  // carry nicer labels), then append everything else it reports.
-  // Discovery failed: fall back to the curated list so the provider stays usable.
-  let models: ModelOption[];
-  if (discovered.length === 0) {
-    models = curated;
-  } else {
-    const live = new Set(discovered.map((m) => m.id));
-    const keptCurated = curated.filter((m) => live.has(m.id));
-    const curatedIds = new Set(keptCurated.map((m) => m.id));
-    models = [...keptCurated, ...discovered.filter((m) => !curatedIds.has(m.id))];
-  }
-
-  cache.set(provider, { expires: Date.now() + CACHE_TTL_MS, models });
-  return models;
 }
 
 async function fetchJson(url: string, headers: Record<string, string>): Promise<unknown> {
@@ -64,17 +66,122 @@ async function fetchJson(url: string, headers: Record<string, string>): Promise<
   return res.json();
 }
 
+function formatContext(tokens: number | undefined): string {
+  if (!tokens) return "";
+  return tokens >= 1_000_000 ? `${Math.round(tokens / 100_000) / 10}M context` : `${Math.round(tokens / 1000)}K context`;
+}
+
+// ---------------------------------------------------------------------------
+// Groq — https://api.groq.com/openai/v1/models (authenticated)
+// ---------------------------------------------------------------------------
+
+interface GroqModel {
+  id?: string;
+  name?: string;
+  active?: boolean;
+  context_window?: number;
+  max_completion_tokens?: number;
+  input_modalities?: string[];
+  output_modalities?: string[];
+}
+
+/** Classifier/guard models answer with labels, not prose. */
+const GROQ_NON_CHAT = /guard|safeguard|moderation|embed/i;
+
 async function discoverGroq(): Promise<ModelOption[]> {
   const config = getProviderConfig("groq");
   if (!config || config.kind !== "openai-compatible" || !config.apiKey) return [];
   const body = (await fetchJson(`${config.baseUrl}/models`, { Authorization: `Bearer ${config.apiKey}` })) as {
-    data?: Array<{ id?: string; active?: boolean }>;
+    data?: GroqModel[];
   };
+
   return (body.data ?? [])
-    .filter((m) => typeof m.id === "string" && m.active !== false && !/whisper|tts|guard|safeguard|orpheus|compound/i.test(m.id))
-    .map((m) => ({ id: `groq:${m.id}`, provider: "groq" as const, model: m.id as string, label: m.id as string }))
+    .filter(
+      (m): m is GroqModel & { id: string } =>
+        typeof m.id === "string" &&
+        m.active !== false &&
+        (m.input_modalities ?? ["text"]).includes("text") &&
+        (m.output_modalities ?? ["text"]).includes("text") &&
+        !GROQ_NON_CHAT.test(m.id),
+    )
+    .map((m) => ({
+      id: `groq:${m.id}`,
+      provider: "groq" as const,
+      model: m.id,
+      label: m.name?.trim() || m.id,
+      description: formatContext(m.context_window),
+      maxOutputTokens: m.max_completion_tokens,
+      contextLength: m.context_window,
+    }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
+
+// ---------------------------------------------------------------------------
+// OpenRouter — https://openrouter.ai/api/v1/models (public)
+// ---------------------------------------------------------------------------
+
+interface OpenRouterModel {
+  id?: string;
+  name?: string;
+  context_length?: number;
+  pricing?: { prompt?: string; completion?: string };
+  architecture?: { output_modalities?: string[] };
+  top_provider?: { max_completion_tokens?: number | null };
+}
+
+/** Safety classifiers and audio generators aren't chat models. */
+const OPENROUTER_NON_CHAT = /content-safety|guard|moderation|lyria|tts|whisper/i;
+
+function isFree(m: OpenRouterModel): boolean {
+  return Number(m.pricing?.prompt ?? 1) === 0 && Number(m.pricing?.completion ?? 1) === 0;
+}
+
+function openRouterRouterOption(contextLength: number): ModelOption {
+  return {
+    id: `openrouter:${OPENROUTER_FREE_ROUTER_ID}`,
+    provider: "openrouter",
+    model: OPENROUTER_FREE_ROUTER_ID,
+    label: "Free Models Router (auto)",
+    description: "Picks an available free model for you — most resilient to rate limits.",
+    contextLength,
+  };
+}
+
+async function discoverOpenRouter(): Promise<ModelOption[]> {
+  const config = getProviderConfig("openrouter");
+  if (!config || config.kind !== "openai-compatible") return [];
+  const headers: Record<string, string> = {};
+  if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
+  const body = (await fetchJson(`${config.baseUrl}/models`, headers)) as { data?: OpenRouterModel[] };
+
+  const free = (body.data ?? []).filter(
+    (m): m is OpenRouterModel & { id: string } =>
+      typeof m.id === "string" &&
+      isFree(m) &&
+      (m.architecture?.output_modalities ?? ["text"]).every((o) => o === "text") &&
+      !OPENROUTER_NON_CHAT.test(m.id),
+  );
+
+  const router = free.find((m) => m.id === OPENROUTER_FREE_ROUTER_ID);
+  const rest = free
+    .filter((m) => m.id !== OPENROUTER_FREE_ROUTER_ID)
+    .map((m) => ({
+      id: `openrouter:${m.id}`,
+      provider: "openrouter" as const,
+      model: m.id,
+      label: (m.name ?? m.id).replace(/\s*\(free\)\s*$/i, "").trim(),
+      description: formatContext(m.context_length),
+      maxOutputTokens: m.top_provider?.max_completion_tokens ?? undefined,
+      contextLength: m.context_length,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  return [openRouterRouterOption(router?.context_length ?? 200_000), ...rest];
+}
+
+// ---------------------------------------------------------------------------
+// Ollama — {OLLAMA_BASE_URL}/api/tags (local)
+// ---------------------------------------------------------------------------
 
 async function discoverOllama(): Promise<ModelOption[]> {
   const config = getProviderConfig("ollama");
@@ -82,7 +189,7 @@ async function discoverOllama(): Promise<ModelOption[]> {
   const root = config.baseUrl.replace(/\/v1$/, "");
   const body = (await fetchJson(`${root}/api/tags`, {})) as { models?: Array<{ name?: string }> };
   return (body.models ?? [])
-    .filter((m) => typeof m.name === "string")
-    .map((m) => ({ id: `ollama:${m.name}`, provider: "ollama" as const, model: m.name as string, label: m.name as string }))
+    .filter((m): m is { name: string } => typeof m.name === "string")
+    .map((m) => ({ id: `ollama:${m.name}`, provider: "ollama" as const, model: m.name, label: m.name }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }

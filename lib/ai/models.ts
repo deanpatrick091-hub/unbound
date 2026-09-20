@@ -39,26 +39,16 @@ function option(provider: ProviderId, model: string, label: string, description?
 }
 
 /**
- * Curated catalog. Gemini ids are verified against this key; Groq and Ollama
- * are also discovered live (see lib/ai/discovery.ts); OpenRouter and Hugging
- * Face entries are their free-tier models as listed on 2026-09-20. OpenRouter
- * rotates its ":free" tier, so expect to refresh these occasionally.
+ * Curated catalog — only for providers without a usable discovery endpoint.
+ * Groq, OpenRouter and Ollama are discovered live from their own model APIs
+ * (see lib/ai/discovery.ts) so their ids are never hard-coded here.
+ *
+ * Gemini: verified against the free tier (the Pro preview has zero free quota
+ * and is deliberately omitted). Hugging Face: as listed on 2026-09-20.
  */
 export const MODEL_CATALOG: readonly ModelOption[] = [
   option("gemini", "gemini-3.6-flash", "Gemini 3.6 Flash", "Fast, balanced — the default."),
   option("gemini", "gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite", "Lightest and quickest."),
-  option("gemini", "gemini-3.1-pro-preview", "Gemini 3.1 Pro (preview)", "Deeper reasoning; slower."),
-
-  option("groq", "llama-3.3-70b-versatile", "Llama 3.3 70B", "Strong general model, very fast on Groq."),
-  option("groq", "llama-3.1-8b-instant", "Llama 3.1 8B Instant", "Smallest and fastest."),
-  option("groq", "openai/gpt-oss-120b", "GPT-OSS 120B", "OpenAI open-weight reasoning model."),
-  option("groq", "openai/gpt-oss-20b", "GPT-OSS 20B", "Lighter open-weight model."),
-
-  option("openrouter", "nvidia/nemotron-3.5-lightning:free", "Nemotron 3.5 Lightning", "1M context, free tier."),
-  option("openrouter", "google/gemma-4-31b-it:free", "Gemma 4 31B", "Google open model, free tier."),
-  option("openrouter", "qwen/qwen3.8-27b:free", "Qwen 3.8 27B", "Free tier."),
-  option("openrouter", "nvidia/nemotron-3-super-120b-a12b:free", "Nemotron 3 Super 120B", "Free tier."),
-  option("openrouter", "z-ai/glm-5.2:free", "GLM 5.2", "Free tier."),
 
   option("huggingface", "meta-llama/Llama-3.1-8B-Instruct", "Llama 3.1 8B Instruct", "Widely available."),
   option("huggingface", "Qwen/Qwen3-8B", "Qwen3 8B", "Compact and capable."),

@@ -23,6 +23,9 @@ export interface ModelOption {
   model: string;
   label: string;
   description?: string;
+  /** Provider-reported output cap, when known. */
+  maxOutputTokens?: number;
+  contextLength?: number;
 }
 
 export interface GenerationTurn {
@@ -37,6 +40,10 @@ export interface GenerationOptions {
   turns: GenerationTurn[];
   signal?: AbortSignal;
   temperature?: number;
+  /** Output budget hint; adapters clamp it to what the provider allows. */
+  maxTokens?: number;
+  /** Called when the provider reports the model no longer exists. */
+  onModelUnavailable?: () => void;
 }
 
 /** Events yielded by any provider stream. Always ends with `done` or `error`. */

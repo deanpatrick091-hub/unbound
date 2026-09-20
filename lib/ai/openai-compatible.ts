@@ -11,6 +11,9 @@ import type { ChatErrorCode, TokenUsage } from "@/lib/chat/types";
  * provider answered.
  */
 
+/** Sent on every request so providers can budget output up front. */
+const DEFAULT_MAX_TOKENS = 4096;
+
 interface StreamChunk {
   choices?: Array<{
     delta?: { content?: string | null };
@@ -21,7 +24,7 @@ interface StreamChunk {
     completion_tokens?: number;
     total_tokens?: number;
   } | null;
-  error?: { message?: string; code?: string | number };
+  error?: { message?: string; code?: string | number; metadata?: { raw?: string } };
 }
 
 const CONTENT_FILTER_REASONS = new Set(["content_filter"]);
@@ -41,50 +44,70 @@ export async function* streamOpenAICompatible(
   };
   if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
 
-  const body: Record<string, unknown> = {
-    model,
-    stream: true,
-    messages: [
-      { role: "system", content: systemInstruction },
-      ...turns.map((t) => ({ role: t.role, content: t.content })),
-    ],
+  const buildBody = (maxTokens: number): string => {
+    const body: Record<string, unknown> = {
+      model,
+      stream: true,
+      max_tokens: maxTokens,
+      messages: [
+        { role: "system", content: systemInstruction },
+        ...turns.map((t) => ({ role: t.role, content: t.content })),
+      ],
+    };
+    if (temperature !== undefined) body.temperature = temperature;
+    if (config.supportsStreamUsage) body.stream_options = { include_usage: true };
+    return JSON.stringify(body);
   };
-  if (temperature !== undefined) body.temperature = temperature;
-  if (config.supportsStreamUsage) body.stream_options = { include_usage: true };
 
+  let maxTokens = Math.min(options.maxTokens ?? DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS);
   let response: Response;
-  try {
-    response = await fetch(`${config.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal,
-    });
-  } catch (error) {
-    if (signal?.aborted) {
-      yield { type: "error", code: "aborted", message: "The request was cancelled." };
+
+  // One request, plus at most one retry when the provider tells us the
+  // requested output budget is over its per-minute cap.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      response = await fetch(`${config.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers,
+        body: buildBody(maxTokens),
+        signal,
+      });
+    } catch (error) {
+      if (signal?.aborted) {
+        yield { type: "error", code: "aborted", message: "The request was cancelled." };
+        return;
+      }
+      console.error(`[${providerLabel}] request failed:`, error);
+      yield {
+        type: "error",
+        code: "network_error",
+        message: `Could not reach ${providerLabel}. ${providerLabel === "Ollama (local)" ? "Is Ollama running?" : "Please try again."}`,
+      };
       return;
     }
-    console.error(`[${providerLabel}] request failed:`, error);
-    yield {
-      type: "error",
-      code: "network_error",
-      message: `Could not reach ${providerLabel}. ${providerLabel === "Ollama (local)" ? "Is Ollama running?" : "Please try again."}`,
-    };
-    return;
-  }
 
-  if (!response.ok || !response.body) {
+    if (response.ok && response.body) break;
+
     const detail = await safeErrorDetail(response);
-    console.error(`[${providerLabel}] HTTP ${response.status}:`, detail);
-    yield { type: "error", ...mapHttpError(response.status, providerLabel, detail) };
+    console.error(`[${providerLabel}] HTTP ${response.status} for ${model}: ${providerReason(detail) || "(no detail)"}`);
+
+    const outputCap = attempt === 0 ? parseOutputTokenCap(detail) : null;
+    if (response.status === 429 && outputCap && outputCap < maxTokens) {
+      maxTokens = outputCap;
+      continue;
+    }
+
+    // The provider says the model is gone: refresh the picker on the next render.
+    if (response.status === 404 && options.onModelUnavailable) options.onModelUnavailable();
+
+    yield { type: "error", ...mapHttpError(response.status, providerLabel, model, detail) };
     return;
   }
 
   let usage: TokenUsage | undefined;
 
   try {
-    for await (const data of readSse(response.body)) {
+    for await (const data of readSse(response.body as ReadableStream<Uint8Array>)) {
       if (data === "[DONE]") break;
 
       let chunk: StreamChunk;
@@ -95,10 +118,11 @@ export async function* streamOpenAICompatible(
       }
 
       if (chunk.error) {
+        const reason = providerReason(JSON.stringify(chunk.error));
         yield {
           type: "error",
           code: "upstream_error",
-          message: `${providerLabel} returned an error mid-stream. Please try again.`,
+          message: `${providerLabel} returned an error mid-stream${reason ? `: ${reason}` : ""}. Please try again.`,
         };
         return;
       }
@@ -166,47 +190,84 @@ async function* readSse(body: ReadableStream<Uint8Array>): AsyncGenerator<string
 
 async function safeErrorDetail(response: Response): Promise<string> {
   try {
-    const text = await response.text();
-    return text.slice(0, 500);
+    return (await response.text()).slice(0, 2000);
   } catch {
     return "";
   }
 }
 
+/** Groq: "... output tokens per minute (OTPM): Limit 1000, Requested 1454 ..." */
+function parseOutputTokenCap(detail: string): number | null {
+  if (!/output tokens/i.test(detail)) return null;
+  const match = detail.match(/Limit\s+(\d+)/i);
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * Pulls the human-readable reason out of a provider error body, without
+ * URLs, ids or anything that could carry account details.
+ */
+function providerReason(detail: string): string {
+  let message = "";
+  try {
+    const parsed = JSON.parse(detail) as { error?: { message?: string; metadata?: { raw?: string } } | string };
+    const err = parsed.error;
+    if (typeof err === "string") message = err;
+    else message = err?.metadata?.raw || err?.message || "";
+    // OpenRouter wraps upstream JSON in metadata.raw; unwrap one level.
+    if (message.trim().startsWith("{")) {
+      const inner = JSON.parse(message) as { error?: { message?: string } | string; message?: string };
+      message = (typeof inner.error === "string" ? inner.error : inner.error?.message) || inner.message || message;
+    }
+  } catch {
+    message = detail;
+  }
+  return message
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/\b(org|user|proj|sk|key)[_-][A-Za-z0-9_-]{6,}\b/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([.,;:])/g, "$1")
+    .trim()
+    .slice(0, 240);
+}
+
 function mapHttpError(
   status: number,
   providerLabel: string,
+  model: string,
   detail: string,
 ): { code: ChatErrorCode; message: string } {
+  const reason = providerReason(detail);
+  const suffix = reason ? ` (${reason})` : "";
+
   switch (status) {
     case 401:
     case 403:
-      return { code: "upstream_error", message: `${providerLabel} rejected the server's API key.` };
+      return { code: "upstream_error", message: `${providerLabel} rejected the server's API key${suffix}.` };
+    case 402:
+      return {
+        code: "upstream_error",
+        message: `${providerLabel} needs credits for ${model}${suffix}. Pick a free model.`,
+      };
     case 404:
       return {
         code: "upstream_error",
-        message: /model/i.test(detail)
-          ? `${providerLabel} doesn't serve that model. Pick another model.`
-          : `${providerLabel} returned 404. Check the model id.`,
+        message: `${providerLabel} no longer serves ${model}${suffix}. Pick another model.`,
       };
     case 400:
     case 422:
-      return {
-        code: "upstream_error",
-        message: /model/i.test(detail)
-          ? `${providerLabel} doesn't recognise that model id.`
-          : `${providerLabel} rejected the request.`,
-      };
-    case 402:
-      return { code: "upstream_error", message: `${providerLabel} reports no remaining credits for this model.` };
+      return { code: "upstream_error", message: `${providerLabel} rejected the request for ${model}${suffix}.` };
     case 429:
-      return { code: "rate_limited", message: `${providerLabel} is rate-limiting requests. Please wait a moment.` };
+      return {
+        code: "rate_limited",
+        message: `${providerLabel} is rate-limiting ${model}${suffix}. Wait a moment or pick another model.`,
+      };
     case 500:
     case 502:
     case 503:
     case 504:
-      return { code: "upstream_error", message: `${providerLabel} is temporarily unavailable. Please try again.` };
+      return { code: "upstream_error", message: `${providerLabel} is temporarily unavailable${suffix}. Please try again.` };
     default:
-      return { code: "upstream_error", message: `${providerLabel} returned an unexpected error (${status}).` };
+      return { code: "upstream_error", message: `${providerLabel} returned an unexpected error (${status})${suffix}.` };
   }
 }
