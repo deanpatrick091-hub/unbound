@@ -50,4 +50,6 @@ export interface GenerationOptions {
 export type GenerationEvent =
   | { type: "text"; text: string }
   | { type: "error"; code: ChatErrorCode; message: string }
-  | { type: "done"; usage?: TokenUsage };
+  | { type: "done"; usage?: TokenUsage }
+  /** Emitted by the fallback layer when it switches to another model before any text was produced. */
+  | { type: "fallback"; from: string; to: string; reason: string };

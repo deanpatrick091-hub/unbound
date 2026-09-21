@@ -10,6 +10,7 @@ import type {
   ChatRequestBody,
   ChatStreamEvent,
 } from "@/lib/chat/types";
+import { describeModel } from "@/lib/ai/models";
 import { createId, readErrorBody, readNdjson } from "@/lib/stream/ndjson";
 
 export type ChatStatus = "idle" | "submitting" | "streaming" | "error";
@@ -151,6 +152,13 @@ export function useChat(options: UseChatOptions): UseChatResult {
               commit((prev) => prev.map((m) => (m.id === assistant.id ? { ...m, content: text } : m)));
               setStatus("streaming");
               break;
+            case "model_switched": {
+              const from = describeModel(event.from);
+              const to = describeModel(event.to);
+              const note = `${from.label} was rate-limited — answered by ${to.providerLabel} · ${to.label} instead.`;
+              commit((prev) => prev.map((m) => (m.id === assistant.id ? { ...m, note } : m)));
+              break;
+            }
             case "error":
               finishWith({ code: event.code, message: event.message });
               return;

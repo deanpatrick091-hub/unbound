@@ -1,4 +1,4 @@
-import type { NextRequest } from "next/server";
+﻿import type { NextRequest } from "next/server";
 
 import { errorResponse, limitResponse, NDJSON_HEADERS } from "@/lib/api/responses";
 import { getSession } from "@/lib/auth/session";
@@ -15,7 +15,7 @@ import {
   updateConversationModel,
 } from "@/lib/data/conversations";
 import type { ConversationRow, MessageStatus } from "@/lib/data/types";
-import { streamGeneration, type GenerationTurn } from "@/lib/ai/generate";
+import { streamWithFallback, type GenerationTurn } from "@/lib/ai/generate";
 import { parseModelId, resolveModel } from "@/lib/ai/models";
 import { isProviderEnabled, providerNotConfiguredMessage } from "@/lib/ai/providers";
 import { consumeRequest } from "@/lib/limits/consume";
@@ -165,8 +165,10 @@ export async function POST(request: NextRequest): Promise<Response> {
         let status: MessageStatus = "complete";
         let usage: TokenUsage | undefined;
         let failure: Extract<ChatStreamEvent, { type: "error" }> | undefined;
+        // The model that actually answered (may differ after a rate-limit fallback).
+        let usedModel = model;
 
-        for await (const event of streamGeneration({
+        for await (const event of streamWithFallback({
           model,
           systemInstruction: CHAT_SYSTEM_INSTRUCTION,
           turns,
@@ -175,6 +177,9 @@ export async function POST(request: NextRequest): Promise<Response> {
           if (event.type === "text") {
             text += event.text;
             send(event);
+          } else if (event.type === "fallback") {
+            usedModel = event.to;
+            send({ type: "model_switched", from: event.from, to: event.to, reason: event.reason });
           } else if (event.type === "error") {
             status = event.code === "aborted" ? "cancelled" : "error";
             failure = event;
@@ -205,7 +210,7 @@ export async function POST(request: NextRequest): Promise<Response> {
               userId: user.id,
               role: "assistant",
               content: text,
-              model,
+              model: usedModel,
               status,
             });
             assistantMessageId = saved.id;
@@ -219,12 +224,12 @@ export async function POST(request: NextRequest): Promise<Response> {
             userId: user.id,
             feature: "chat",
             conversationId,
-            model,
+            model: usedModel,
             ...usage,
           });
         }
 
-        if (status === "complete") send({ type: "done", assistantMessageId, usage });
+        if (status === "complete") send({ type: "done", assistantMessageId, usage, model: usedModel });
         else if (failure && status !== "cancelled") send(failure);
         close();
       };

@@ -22,7 +22,7 @@ import {
   upsertCouncilOpinion,
 } from "@/lib/data/council";
 import type { MessageStatus } from "@/lib/data/types";
-import { streamGeneration } from "@/lib/ai/generate";
+import { streamWithFallback as streamGeneration } from "@/lib/ai/generate";
 import { parseModelId, resolveModel } from "@/lib/ai/models";
 import { isProviderEnabled, providerNotConfiguredMessage } from "@/lib/ai/providers";
 import { consumeRequest } from "@/lib/limits/consume";
@@ -30,7 +30,7 @@ import { consumeRequest } from "@/lib/limits/consume";
 // Five sequential-ish model calls; allow more headroom than a single chat turn.
 export const maxDuration = 120;
 
-/** GET /api/council â€” the caller's Council sessions, newest first. */
+/** GET /api/council — the caller's Council sessions, newest first. */
 export async function GET(): Promise<Response> {
   const { supabase, user } = await getSession();
   if (!user) return errorResponse(401, "unauthorized", "Sign in to continue.");
@@ -50,7 +50,7 @@ interface MemberResult {
 }
 
 /**
- * POST /api/council â€” orchestrates one Council run.
+ * POST /api/council — orchestrates one Council run.
  *
  * Four perspectives run concurrently with independent system instructions;
  * their deltas are multiplexed onto one NDJSON stream. The Judge then
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     });
     sessionId = session.id;
   } catch (error) {
-    console.warn("[council] storage unavailable â€” running without persistence:", error);
+    console.warn("[council] storage unavailable — running without persistence:", error);
     sessionId = crypto.randomUUID();
     persisted = false;
   }
@@ -145,6 +145,8 @@ export async function POST(request: NextRequest): Promise<Response> {
           } else if (event.type === "error") {
             status = event.code === "aborted" ? "cancelled" : "error";
             message = event.message;
+          } else if (event.type === "fallback") {
+            // Another free model is answering for this seat; nothing to show.
           } else if (event.usage) {
             totalUsage.promptTokens += event.usage.promptTokens;
             totalUsage.completionTokens += event.usage.completionTokens;

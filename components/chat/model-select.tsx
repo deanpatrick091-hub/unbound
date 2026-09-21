@@ -20,9 +20,10 @@ interface ModelSelectProps {
 }
 
 /**
- * Native <select> under a custom skin: keyboard/screen-reader behaviour for
- * free, zero JS, and it matches the OS picker on mobile. Options are grouped
- * by provider so the provider *is* the choice, not a separate control.
+ * A native <select> (keyboard, screen readers, and the OS picker on mobile
+ * all for free) laid invisibly over a styled "Provider · Model" readout, so
+ * the closed control shows both parts — native selects only show the option
+ * text, never its optgroup.
  */
 export function ModelSelect({ value, onChange, models, disabled, className, label, name }: ModelSelectProps) {
   const id = useId();
@@ -30,6 +31,7 @@ export function ModelSelect({ value, onChange, models, disabled, className, labe
   const groups = groupByProvider(models);
   const known = models.some((m) => m.id === current);
   const described = describeModel(current, models);
+  const isDisabled = disabled || models.length === 0;
 
   return (
     <div className={cn("relative inline-flex items-center", className)}>
@@ -37,36 +39,52 @@ export function ModelSelect({ value, onChange, models, disabled, className, labe
         {label ?? "Provider and model"}
       </label>
       <div className="relative">
+        {/* Real control: transparent, on top, first in DOM so `peer-*` can style the readout. */}
         <select
           id={id}
           name={name}
           value={current}
-          disabled={disabled || models.length === 0}
+          disabled={isDisabled}
           onChange={(e) => onChange(e.target.value)}
           title={`${described.providerLabel} · ${described.label}`}
-          className="peer h-8 max-w-[220px] cursor-pointer appearance-none truncate rounded-md border border-transparent bg-transparent py-1 pr-7 pl-2.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:border-border hover:bg-surface hover:text-foreground focus-visible:border-border-strong focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 sm:max-w-[280px]"
+          className="peer absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
         >
           {!known ? (
             // The conversation's stored model isn't servable right now (key
-            // removed, Ollama offline). Keep it visible so the user sees why.
-            <option value={current} className="bg-raised text-foreground">
+            // removed, provider dropped it). Keep it visible so the user sees why.
+            <option value={current}>
               {described.providerLabel} · {described.label} (unavailable)
             </option>
           ) : null}
           {groups.map((group) => (
-            <optgroup key={group.provider} label={group.label} className="bg-raised text-muted-foreground">
+            <optgroup key={group.provider} label={group.label}>
               {group.models.map((m) => (
-                <option key={m.id} value={m.id} title={m.description} className="bg-raised text-foreground">
-                  {m.label}
+                <option key={m.id} value={m.id} title={m.description}>
+                  {group.label} · {m.label}
                 </option>
               ))}
             </optgroup>
           ))}
         </select>
-        <ChevronDown
+
+        {/* Visible readout */}
+        <div
           aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-subtle peer-hover:text-muted-foreground"
-        />
+          className={cn(
+            "flex h-8 max-w-[240px] items-center gap-1.5 rounded-md border border-transparent py-1 pr-7 pl-2.5 text-xs font-medium text-muted-foreground transition-colors sm:max-w-[320px]",
+            "peer-hover:border-border peer-hover:bg-surface peer-hover:text-foreground",
+            "peer-focus-visible:border-border-strong peer-focus-visible:ring-2 peer-focus-visible:ring-ring",
+            isDisabled && "opacity-50",
+          )}
+        >
+          <span className="shrink-0 text-subtle">{described.providerLabel}</span>
+          <span className="shrink-0 text-subtle">·</span>
+          <span className={cn("truncate", !known && "text-destructive/80")}>
+            {described.label}
+            {!known ? " (unavailable)" : ""}
+          </span>
+          <ChevronDown aria-hidden="true" className="absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-subtle" />
+        </div>
       </div>
     </div>
   );

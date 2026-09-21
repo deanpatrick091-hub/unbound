@@ -44,6 +44,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming 
         ) : message.status === "error" ? (
           <p className="mt-2 text-[11px] text-destructive/80">Response interrupted</p>
         ) : null}
+        {message.note ? <p className="mt-2 text-[11px] text-subtle">{message.note}</p> : null}
       </div>
     </article>
   );

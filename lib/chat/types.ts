@@ -13,6 +13,8 @@ export interface ChatMessage {
   createdAt: number;
   /** Non-complete assistant turns are shown with a subtle marker. */
   status?: "complete" | "error" | "cancelled";
+  /** Small footnote under an assistant turn (e.g. which model answered after a fallback). */
+  note?: string;
 }
 
 /**
@@ -73,8 +75,10 @@ export type ChatStreamEvent =
       persisted: boolean;
     }
   | { type: "text"; text: string }
+  /** The chosen model was rate-limited before replying; another model is answering instead. */
+  | { type: "model_switched"; from: string; to: string; reason: string }
   | { type: "error"; code: ChatErrorCode; message: string }
-  | { type: "done"; assistantMessageId?: string; usage?: TokenUsage };
+  | { type: "done"; assistantMessageId?: string; usage?: TokenUsage; model?: string };
 
 export type ChatErrorCode =
   | "unauthorized"
