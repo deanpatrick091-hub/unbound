@@ -311,7 +311,7 @@ create policy "council_opinions: delete own"
 create table public.usage (
   id                  uuid primary key default gen_random_uuid(),
   user_id             uuid not null references auth.users (id) on delete cascade,
-  feature             text not null check (feature in ('chat', 'council')),
+  feature             text not null check (feature in ('chat', 'council', 'build')),
   conversation_id     uuid references public.conversations (id) on delete set null,
   council_session_id  uuid references public.council_sessions (id) on delete set null,
   model               text not null,

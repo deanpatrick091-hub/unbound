@@ -94,6 +94,11 @@
   50% { opacity: 0.9; }
 }
 
+@keyframes shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/60;

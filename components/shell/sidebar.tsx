@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MessageSquare, Plus, Settings, Users } from "lucide-react";
+import { Hammer, Image as ImageIcon, MessageSquare, Plus, Settings, Users } from "lucide-react";
 
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { ConversationItem } from "@/components/shell/conversation-item";
@@ -21,13 +21,19 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const { user, conversations, councilSessions } = useShell();
 
-  const area: "chat" | "council" = pathname.startsWith("/council") ? "council" : "chat";
+  const area: "chat" | "council" | "image" | "build" = pathname.startsWith("/council")
+    ? "council"
+    : pathname.startsWith("/image-gen")
+      ? "image"
+      : pathname.startsWith("/build")
+        ? "build"
+        : "chat";
   const activeId = useMemo(() => {
     const match = pathname.match(/^\/(?:c|council)\/([^/]+)/);
     return match?.[1] ?? null;
   }, [pathname]);
 
-  const list = area === "chat" ? conversations : councilSessions;
+  const list = area === "chat" ? conversations : area === "council" ? councilSessions : [];
   const name = user.displayName || user.email || "Account";
   const initial = name.trim().charAt(0).toUpperCase() || "U";
 
@@ -42,42 +48,56 @@ export function Sidebar({ onNavigate }: SidebarProps) {
       <div className="grid grid-cols-2 gap-1 px-3 pb-3">
         <NavTile href="/" icon={Plus} label="New chat" active={area === "chat"} onClick={onNavigate} />
         <NavTile href="/council" icon={Users} label="Council" active={area === "council"} onClick={onNavigate} />
+        <NavTile href="/image-gen" icon={ImageIcon} label="Image Gen" active={area === "image"} onClick={onNavigate} />
+        <NavTile href="/build" icon={Hammer} label="Build" active={area === "build"} onClick={onNavigate} />
       </div>
 
-      <div className="flex items-center justify-between px-4 pt-3 pb-1.5">
-        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-subtle">
-          {area === "chat" ? "Recent" : "Sessions"}
-        </span>
-        {area === "council" && councilSessions.length > 0 ? (
-          <Link
-            href="/council"
-            onClick={onNavigate}
-            className="text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-          >
-            New
-          </Link>
-        ) : null}
-      </div>
+      {area === "image" ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
+          <p className="text-xs text-subtle">Compare Nano Banana image models side by side.</p>
+        </div>
+      ) : area === "build" ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
+          <p className="text-xs text-subtle">Describe a website and refine it in conversation. Your work autosaves in this browser.</p>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center justify-between px-4 pt-3 pb-1.5">
+            <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-subtle">
+              {area === "chat" ? "Recent" : "Sessions"}
+            </span>
+            {area === "council" && councilSessions.length > 0 ? (
+              <Link
+                href="/council"
+                onClick={onNavigate}
+                className="text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+              >
+                New
+              </Link>
+            ) : null}
+          </div>
 
-      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        {list.length === 0 ? (
-          <p className="px-2 py-6 text-center text-xs text-subtle">
-            {area === "chat" ? "No conversations yet." : "No Council sessions yet."}
-          </p>
-        ) : area === "chat" ? (
-          <ul className="space-y-px">
-            {conversations.map((c) => (
-              <ConversationItem key={c.id} conversation={c} active={c.id === activeId} onNavigate={onNavigate} />
-            ))}
-          </ul>
-        ) : (
-          <ul className="space-y-px">
-            {councilSessions.map((s) => (
-              <CouncilItem key={s.id} session={s} active={s.id === activeId} onNavigate={onNavigate} />
-            ))}
-          </ul>
-        )}
-      </div>
+          <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+            {list.length === 0 ? (
+              <p className="px-2 py-6 text-center text-xs text-subtle">
+                {area === "chat" ? "No conversations yet." : "No Council sessions yet."}
+              </p>
+            ) : area === "chat" ? (
+              <ul className="space-y-px">
+                {conversations.map((c) => (
+                  <ConversationItem key={c.id} conversation={c} active={c.id === activeId} onNavigate={onNavigate} />
+                ))}
+              </ul>
+            ) : (
+              <ul className="space-y-px">
+                {councilSessions.map((s) => (
+                  <CouncilItem key={s.id} session={s} active={s.id === activeId} onNavigate={onNavigate} />
+                ))}
+              </ul>
+            )}
+          </div>
+        </>
+      )}
 
       <div className="shrink-0 border-t p-2">
         <div className="flex items-center gap-2 rounded-md px-2 py-1.5">

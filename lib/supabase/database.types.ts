@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Hand-maintained mirror of supabase/migrations. Keep in sync when the schema
  * changes (or replace with `supabase gen types typescript` output later).
  */
@@ -9,7 +9,7 @@ export type MessageRole = "user" | "assistant";
 export type MessageStatus = "complete" | "error" | "cancelled";
 export type CouncilRole = "analyst" | "skeptic" | "optimist" | "contrarian" | "judge";
 export type CouncilStatus = "running" | "complete" | "error" | "cancelled";
-export type UsageFeature = "chat" | "council";
+export type UsageFeature = "chat" | "council" | "build";
 
 export type ProfileRow = {
   id: string;

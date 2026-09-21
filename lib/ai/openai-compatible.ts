@@ -97,6 +97,24 @@ export async function* streamOpenAICompatible(
       continue;
     }
 
+    // "Please try again in 2.1s": a short, provider-quoted wait is worth one retry.
+    const waitMs = attempt === 0 ? parseRetryAfter(detail, response.headers.get("retry-after")) : null;
+    if (response.status === 429 && waitMs !== null && waitMs <= MAX_AUTO_WAIT_MS && !signal?.aborted) {
+      console.warn(`[${providerLabel}] rate-limited; retrying ${model} in ${Math.ceil(waitMs / 1000)}s`);
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, waitMs);
+        signal?.addEventListener("abort", () => {
+          clearTimeout(timer);
+          resolve();
+        }, { once: true });
+      });
+      if (signal?.aborted) {
+        yield { type: "error", code: "aborted", message: "The request was cancelled." };
+        return;
+      }
+      continue;
+    }
+
     // The provider says the model is gone: refresh the picker on the next render.
     if (response.status === 404 && options.onModelUnavailable) options.onModelUnavailable();
 
@@ -196,6 +214,23 @@ async function safeErrorDetail(response: Response): Promise<string> {
   }
 }
 
+/** Longest provider-quoted wait we'll absorb silently before surfacing the 429. */
+const MAX_AUTO_WAIT_MS = 12_000;
+
+/**
+ * Reads a wait hint from a 429: the `Retry-After` header (seconds) or a
+ * "try again in 2.145s" phrase in the body. Null when the provider gave none.
+ */
+function parseRetryAfter(detail: string, header: string | null): number | null {
+  const fromHeader = header ? Number(header) : NaN;
+  if (Number.isFinite(fromHeader) && fromHeader > 0) return Math.ceil(fromHeader * 1000);
+  const match = detail.match(/try again in\s*([\d.]+)\s*(ms|s)\b/i);
+  if (!match) return null;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value)) return null;
+  return Math.ceil(match[2].toLowerCase() === "ms" ? value : value * 1000) + 250;
+}
+
 /** Groq: "... output tokens per minute (OTPM): Limit 1000, Requested 1454 ..." */
 function parseOutputTokenCap(detail: string): number | null {
   if (!/output tokens/i.test(detail)) return null;
@@ -257,6 +292,11 @@ function mapHttpError(
     case 400:
     case 422:
       return { code: "upstream_error", message: `${providerLabel} rejected the request for ${model}${suffix}.` };
+    case 413:
+      return {
+        code: "upstream_error",
+        message: `${providerLabel} says this request is too large for ${model}'s tier${suffix}. Pick a model with a bigger budget (Gemini or an OpenRouter free model) for this size of site.`,
+      };
     case 429:
       return {
         code: "rate_limited",

@@ -5,6 +5,8 @@ An AI workspace built on Next.js (App Router), Supabase, and the Google Gemini A
 - **Chat** — streaming conversations with persistent history, per-conversation model choice.
 - **Council** — one question, four independent perspectives (Analyst, Skeptic, Optimist,
   Contrarian) run in parallel, then a Final Judge synthesises a verdict.
+- **Builder** — describe a website, see it render live in a sandboxed preview, and refine it
+  in conversation ("make the hero darker", "add an about section").
 - **Accounts** — email/password auth, password reset, profile, preferences, usage view.
 
 ## Stack
@@ -116,6 +118,19 @@ lib/
 proxy.ts                session refresh + auth boundary (Next 16 "proxy")
 supabase/migrations/    schema
 ```
+
+## Website builder sandbox
+
+Generated sites (`lib/build/`) never run inside UNBOUND itself. The preview is an
+`<iframe sandbox="allow-scripts allow-popups allow-forms allow-modals allow-popups-to-escape-sandbox">`
+**without** `allow-same-origin`, so the page has an opaque origin (no cookies, no storage,
+no credentialed requests), and every generated document carries a CSP with
+`connect-src 'none'`, `frame-src 'none'`, `base-uri 'none'` and `form-action 'none'`
+(scripts/styles only inline or from cdnjs, unpkg, jsDelivr, Tailwind CDN and Google Fonts).
+"Open in new tab" posts the files to `/api/build/preview`, which serves them with a
+`Content-Security-Policy: sandbox …` header — never a `blob:` URL, which would be same-origin.
+The server only parses and forwards text; it never evaluates generated code. Work autosaves
+to the browser's localStorage per user.
 
 ## Streaming protocol
 

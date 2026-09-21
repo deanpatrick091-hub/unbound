@@ -75,14 +75,30 @@ export async function* streamWithFallback(
     tried.add(current);
     let produced = false;
     let rateLimited: Extract<GenerationEvent, { type: "error" }> | null = null;
+    let doneEvent: Extract<GenerationEvent, { type: "done" }> | null = null;
 
     for await (const event of streamGeneration({ ...options, model: current })) {
       if (event.type === "error" && event.code === "rate_limited" && !produced) {
         rateLimited = event;
         break;
       }
-      if (event.type === "text") produced = true;
+      if (event.type === "text" && event.text.length > 0) produced = true;
+      if (event.type === "done") {
+        doneEvent = event;
+        break; // decide below whether an empty completion should fall back
+      }
       yield event;
+    }
+
+    if (doneEvent) {
+      // A starved free-tier model often "succeeds" with an empty completion;
+      // treat that like a rate limit so another model gets a chance.
+      if (!produced && isOpenRouterFree(current) && attempt < MAX_FALLBACK_ATTEMPTS && !options.signal?.aborted) {
+        rateLimited = { type: "error", code: "rate_limited", message: "The model returned an empty response." };
+      } else {
+        yield doneEvent;
+        return;
+      }
     }
 
     if (!rateLimited) return;
@@ -90,7 +106,9 @@ export async function* streamWithFallback(
     const canFallback = isOpenRouterFree(current) && attempt < MAX_FALLBACK_ATTEMPTS && !options.signal?.aborted;
     const next = canFallback ? (await openRouterFallbacks(tried))[0] : undefined;
     if (!next) {
-      yield rateLimited;
+      // Out of alternatives: surface the original outcome.
+      if (doneEvent) yield doneEvent;
+      else yield rateLimited;
       return;
     }
 

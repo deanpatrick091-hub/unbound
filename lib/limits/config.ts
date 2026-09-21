@@ -22,6 +22,7 @@ export const USAGE_LIMITS = {
 export const FEATURE_COST = {
   chat: 1,
   council: 5,
+  build: 1,
 } as const;
 
 export type LimitReason =
