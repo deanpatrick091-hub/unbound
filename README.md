@@ -65,12 +65,19 @@ are hard-coded for them. Gemini and Hugging Face use the curated `MODEL_CATALOG`
 the provider's own reason attached.
 
 **Health and fallback** (`lib/ai/health.ts`, `lib/ai/generate.ts`): each model carries a
-temporary, in-memory state — available, busy, rate-limited, unavailable, restricted. If the
-chosen model is rate-limited, restricted, overloaded, silent for 30 s, or answers with an
-empty completion *before any text has streamed*, the request moves to another healthy model
-from the same provider (at most three models per request) and the reply is footnoted with the
-model that answered. 429s, timeouts and empty replies expire after a few minutes; a 403 that
-says the model is only available to approved clients removes it from the picker.
+temporary, in-memory state — Available, Busy, Rate limited, Timeout, Temporarily unavailable,
+Restricted upstream — shown in the picker next to the model. No state ever removes a model
+from the picker; every state expires. Every provider is listed too: an unconfigured one reads
+"API key required" (or "Local server offline" for Ollama) and activates automatically once its
+variable is set.
+
+If the chosen model fails *before any text has streamed* (429, upstream restriction, 5xx or
+in-stream failure, no first token within 30 s, empty completion) the request moves on: the same
+model once more (empty replies only), then a healthy sibling from the same provider, then a
+healthy model from another provider — at most four attempts. The reply is footnoted with the
+model that answered. The composer's **Auto-switch** toggle turns this off, in which case the
+provider's own error is shown. Technical provider details go to the server log, never to
+the UI, and never include keys.
 
 ## Database
 

@@ -1,9 +1,16 @@
 import "server-only";
 
-import { getModelHealth, isModelRestricted } from "@/lib/ai/health";
+import { getModelHealth } from "@/lib/ai/health";
 import { MODEL_CATALOG } from "@/lib/ai/models";
 import { getEnabledProviders, getProviderConfig } from "@/lib/ai/providers";
-import type { ModelOption, ProviderId } from "@/lib/ai/types";
+import {
+  PROVIDER_IDS,
+  PROVIDER_LABELS,
+  PROVIDER_STATE_NOTES,
+  type ModelOption,
+  type ProviderId,
+  type ProviderStatus,
+} from "@/lib/ai/types";
 
 /**
  * Builds the list of models the current server can actually serve.
@@ -15,9 +22,9 @@ import type { ModelOption, ProviderId } from "@/lib/ai/types";
  * in-process briefly so the app layout stays fast; a failed discovery falls
  * back to the last good list.
  *
- * On every read the list is passed through the health store: models the
- * provider has declared restricted are removed, and temporary states
- * (busy / rate-limited / unavailable) are annotated for the picker.
+ * On every read the list is annotated with the health store's current view
+ * (busy / rate-limited / timeout / unavailable / restricted). Nothing is ever
+ * removed for health reasons — the picker shows the state instead.
  */
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -36,7 +43,51 @@ const cache = new Map<ProviderId, CacheEntry>();
 export async function getAvailableModels(): Promise<ModelOption[]> {
   const enabled = getEnabledProviders();
   const lists = await Promise.all(enabled.map((provider) => modelsFor(provider)));
-  return lists.flat().filter((m) => !isModelRestricted(m.id)).map(withHealth);
+  return lists.flat().map(withHealth);
+}
+
+/**
+ * Status of every provider UNBOUND knows, configured or not, so the picker
+ * can show "API key required" / "Local server offline" instead of hiding
+ * the provider. A provider becomes ready the moment its variable is set
+ * (and, for Ollama, its server answers) — no code change needed.
+ */
+export async function getProviderStatuses(): Promise<ProviderStatus[]> {
+  return Promise.all(
+    PROVIDER_IDS.map(async (id): Promise<ProviderStatus> => {
+      const label = PROVIDER_LABELS[id];
+      const config = getProviderConfig(id);
+      if (!config) {
+        return id === "ollama"
+          ? { id, label, state: "offline", note: PROVIDER_STATE_NOTES.offline }
+          : { id, label, state: "missing_key", note: PROVIDER_STATE_NOTES.missing_key };
+      }
+      if (id === "ollama") {
+        const reachable = await ollamaReachable();
+        return reachable ? { id, label, state: "ready" } : { id, label, state: "offline", note: PROVIDER_STATE_NOTES.offline };
+      }
+      return { id, label, state: "ready" };
+    }),
+  );
+}
+
+let ollamaProbe: { at: number; ok: boolean } | null = null;
+
+async function ollamaReachable(): Promise<boolean> {
+  if (ollamaProbe && Date.now() - ollamaProbe.at < 30_000) return ollamaProbe.ok;
+  const config = getProviderConfig("ollama");
+  let ok = false;
+  if (config && config.kind === "openai-compatible") {
+    try {
+      const res = await fetch(`${config.baseUrl.replace(/\/v1$/, "")}/api/tags`, { signal: AbortSignal.timeout(1_500), cache: "no-store" });
+      ok = res.ok;
+    } catch {
+      ok = false;
+    }
+  }
+  ollamaProbe = { at: Date.now(), ok };
+  if (ok) cache.delete("ollama"); // server just (re)appeared: rediscover its models
+  return ok;
 }
 
 /** Forces a fresh discovery next call (e.g. after a provider says a model is gone). */
@@ -47,7 +98,7 @@ export function invalidateModelCache(provider?: ProviderId): void {
 
 function withHealth(model: ModelOption): ModelOption {
   const { state } = getModelHealth(model.id);
-  if (state === "available" || state === "restricted") {
+  if (state === "available") {
     const { health: _drop, ...rest } = model;
     void _drop;
     return rest;

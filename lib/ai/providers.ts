@@ -102,5 +102,9 @@ export function providerNotConfiguredMessage(provider: ProviderId): string {
     huggingface: "HF_TOKEN",
     ollama: "OLLAMA_BASE_URL",
   };
-  return `${PROVIDER_LABELS[provider]} isn't configured on the server. Set ${envVar[provider]}.`;
+  // Logged detail names the variable; the user sees the short form.
+  console.warn(`[providers] ${PROVIDER_LABELS[provider]} not configured (set ${envVar[provider]})`);
+  return provider === "ollama"
+    ? "Ollama's local server is offline."
+    : `${PROVIDER_LABELS[provider]} hasn't been configured yet.`;
 }

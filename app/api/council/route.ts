@@ -1,4 +1,4 @@
-﻿import type { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 
 import { errorResponse, limitResponse, NDJSON_HEADERS } from "@/lib/api/responses";
 import { getSession } from "@/lib/auth/session";
@@ -73,6 +73,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (!question.ok) return errorResponse(400, "invalid_request", question.message.replace("content", "question"));
 
   const model = resolveModel(body.model, await getDefaultModelFor(supabase, user.id));
+  const allowFallback = body.autoFallback !== false;
   const { provider } = parseModelId(model);
   if (!isProviderEnabled(provider)) {
     return errorResponse(400, "not_configured", providerNotConfiguredMessage(provider));
@@ -138,6 +139,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           turns: [{ role: "user", content: input }],
           signal: abort.signal,
           temperature: role === "judge" ? 0.4 : 0.8,
+          allowFallback,
         })) {
           if (event.type === "text") {
             text += event.text;

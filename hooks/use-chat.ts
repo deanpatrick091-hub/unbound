@@ -11,6 +11,7 @@ import type {
   ChatStreamEvent,
 } from "@/lib/chat/types";
 import { describeModel } from "@/lib/ai/models";
+import { getAutoFallback } from "@/lib/prefs/auto-fallback";
 import { createId, readErrorBody, readNdjson } from "@/lib/stream/ndjson";
 
 export type ChatStatus = "idle" | "submitting" | "streaming" | "error";
@@ -119,7 +120,7 @@ export function useChat(options: UseChatOptions): UseChatResult {
         const response = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          body: JSON.stringify({ ...body, autoFallback: getAutoFallback() }),
           signal: controller.signal,
         });
 
@@ -155,7 +156,7 @@ export function useChat(options: UseChatOptions): UseChatResult {
             case "model_switched": {
               const from = describeModel(event.from);
               const to = describeModel(event.to);
-              const note = `${from.label} was rate-limited — answered by ${to.providerLabel} · ${to.label} instead.`;
+              const note = `${from.providerLabel} · ${from.label}: ${event.reason} Answered by ${to.providerLabel} · ${to.label}.`;
               commit((prev) => prev.map((m) => (m.id === assistant.id ? { ...m, note } : m)));
               break;
             }

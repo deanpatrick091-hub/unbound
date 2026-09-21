@@ -77,11 +77,11 @@ export async function* streamOpenAICompatible(
         yield { type: "error", code: "aborted", message: "The request was cancelled." };
         return;
       }
-      console.error(`[${providerLabel}] request failed:`, error);
+      console.error(`[${providerLabel}] request failed for ${model}:`, error instanceof Error ? error.message : error);
       yield {
         type: "error",
         code: "network_error",
-        message: `Could not reach ${providerLabel}. ${providerLabel === "Ollama (local)" ? "Is Ollama running?" : "Please try again."}`,
+        message: providerLabel === "Ollama (local)" ? "Ollama's local server is offline." : `Couldn't reach ${providerLabel}.`,
       };
       return;
     }
@@ -144,6 +144,7 @@ export async function* streamOpenAICompatible(
         // OpenRouter and others report upstream failures inside the stream,
         // with the HTTP-style code in the payload. Surface it like a header.
         const reason = providerReason(JSON.stringify(chunk.error));
+        console.error(`[${providerLabel}] in-stream error for ${model}: ${reason || "(no detail)"}`);
         const code = Number(chunk.error.code);
         const status = Number.isFinite(code) && code >= 400 && code <= 599 ? code : undefined;
         if (status === 429) {
@@ -151,7 +152,7 @@ export async function* streamOpenAICompatible(
             type: "error",
             code: "rate_limited",
             status,
-            message: `${providerLabel} is rate-limiting ${model}${reason ? ` (${reason})` : ""}. Wait a moment or pick another model.`,
+            message: "This model is temporarily busy.",
           };
           return;
         }
@@ -159,7 +160,7 @@ export async function* streamOpenAICompatible(
           type: "error",
           code: "upstream_error",
           status,
-          message: `${providerLabel} returned an error mid-stream${reason ? `: ${reason}` : ""}. Please try again.`,
+          message: `${providerLabel} is temporarily unavailable.`,
         };
         return;
       }
@@ -297,6 +298,10 @@ function providerReason(detail: string): string {
     .slice(0, 240);
 }
 
+/**
+ * User-facing messages. Deliberately non-technical: the provider's own
+ * wording is logged server-side (see the console.error above) but not shown.
+ */
 function mapHttpError(
   status: number,
   providerLabel: string,
@@ -304,48 +309,33 @@ function mapHttpError(
   detail: string,
 ): { code: ChatErrorCode; message: string } {
   const reason = providerReason(detail);
-  const suffix = reason ? ` (${reason})` : "";
+  void model;
 
   switch (status) {
     case 403:
       if (isRestrictionMessage(reason)) {
-        return {
-          code: "restricted",
-          message: `${providerLabel} doesn't serve ${model} to this app${suffix}. It has been hidden from the picker.`,
-        };
+        return { code: "restricted", message: "This model is currently restricted by its upstream provider." };
       }
-      return { code: "upstream_error", message: `${providerLabel} rejected the server's API key${suffix}.` };
+      return { code: "upstream_error", message: `${providerLabel} rejected this app's API key. Check the server configuration.` };
     case 401:
-      return { code: "upstream_error", message: `${providerLabel} rejected the server's API key${suffix}.` };
+      return { code: "upstream_error", message: `${providerLabel} rejected this app's API key. Check the server configuration.` };
     case 402:
-      return {
-        code: "upstream_error",
-        message: `${providerLabel} needs credits for ${model}${suffix}. Pick a free model.`,
-      };
+      return { code: "upstream_error", message: `${providerLabel} needs credits for this model. Please pick another model.` };
     case 404:
-      return {
-        code: "upstream_error",
-        message: `${providerLabel} no longer serves ${model}${suffix}. Pick another model.`,
-      };
+      return { code: "upstream_error", message: "This model is no longer available from its provider. Please pick another model." };
     case 400:
     case 422:
-      return { code: "upstream_error", message: `${providerLabel} rejected the request for ${model}${suffix}.` };
+      return { code: "upstream_error", message: `${providerLabel} rejected this request for the selected model.` };
     case 413:
-      return {
-        code: "upstream_error",
-        message: `${providerLabel} says this request is too large for ${model}'s tier${suffix}. Pick a model with a bigger budget (Gemini or an OpenRouter free model) for this size of site.`,
-      };
+      return { code: "upstream_error", message: "This request is too large for this model's tier. Try a model with a larger limit." };
     case 429:
-      return {
-        code: "rate_limited",
-        message: `${providerLabel} is rate-limiting ${model}${suffix}. Wait a moment or pick another model.`,
-      };
+      return { code: "rate_limited", message: "This model is temporarily busy." };
     case 500:
     case 502:
     case 503:
     case 504:
-      return { code: "upstream_error", message: `${providerLabel} is temporarily unavailable${suffix}. Please try again.` };
+      return { code: "upstream_error", message: `${providerLabel} is temporarily unavailable.` };
     default:
-      return { code: "upstream_error", message: `${providerLabel} returned an unexpected error (${status})${suffix}.` };
+      return { code: "upstream_error", message: `${providerLabel} returned an unexpected error.` };
   }
 }

@@ -22,8 +22,10 @@ interface HealthEntry {
 const TTL_MS = {
   rate_limited: 90_000,
   busy: 5 * 60_000,
+  timeout: 5 * 60_000,
   unavailable: 5 * 60_000,
-  restricted: 24 * 60 * 60_000,
+  /* Re-checked after an hour: upstream policies do change. */
+  restricted: 60 * 60_000,
 } as const;
 
 /** Longest provider-quoted wait we'll honour for a rate-limit entry. */
@@ -59,9 +61,14 @@ export function markRateLimited(id: string, reason: string, retryAfterMs?: numbe
   set(id, "rate_limited", ttl, reason);
 }
 
-/** Overloaded: 5xx, or no first token within the window. */
+/** Overloaded: 5xx or an in-stream provider failure. */
 export function markBusy(id: string, reason: string): void {
   set(id, "busy", TTL_MS.busy, reason);
+}
+
+/** No first token within the window. */
+export function markTimeout(id: string, reason: string): void {
+  set(id, "timeout", TTL_MS.timeout, reason);
 }
 
 /** Answered successfully but with nothing in it. */

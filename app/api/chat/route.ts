@@ -1,10 +1,10 @@
-﻿import type { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 
 import { errorResponse, limitResponse, NDJSON_HEADERS } from "@/lib/api/responses";
 import { getSession } from "@/lib/auth/session";
 import { CHAT_SYSTEM_INSTRUCTION } from "@/lib/chat/prompt";
 import type { ChatStreamEvent, TokenUsage } from "@/lib/chat/types";
-import { parseChatRequest, titleFromContent } from "@/lib/chat/validation";
+import { isRecord, parseChatRequest, titleFromContent } from "@/lib/chat/validation";
 import { getDefaultModelFor } from "@/lib/data/account";
 import {
   createConversation,
@@ -43,6 +43,8 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
   const parsed = parseChatRequest(body);
   if (!parsed.ok) return errorResponse(400, "invalid_request", parsed.message);
+  // Only a boolean switch is read from the browser here; it can't widen anything.
+  const allowFallback = !(isRecord(body) && body.autoFallback === false);
   const { conversationId: requestedId, model: requestedModel } = parsed.data;
   const content = parsed.data.retry === true ? null : parsed.data.content;
 
@@ -173,6 +175,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           systemInstruction: CHAT_SYSTEM_INSTRUCTION,
           turns,
           signal: abort.signal,
+          allowFallback,
         })) {
           if (event.type === "text") {
             text += event.text;

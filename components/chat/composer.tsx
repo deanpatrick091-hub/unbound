@@ -6,6 +6,7 @@ import { ArrowUp, Square } from "lucide-react";
 import { ModelSelect } from "@/components/chat/model-select";
 import { useShell } from "@/components/shell/shell-context";
 import { CHAT_LIMITS } from "@/lib/chat/types";
+import { useAutoFallback } from "@/lib/prefs/auto-fallback";
 import { cn } from "@/lib/utils";
 
 interface ComposerProps {
@@ -31,7 +32,8 @@ export function Composer({
   maxLength = CHAT_LIMITS.maxMessageLength,
   hint = "Enter to send · Shift+Enter for a new line",
 }: ComposerProps) {
-  const { models } = useShell();
+  const { models, providers } = useShell();
+  const [autoFallback, setAutoFallback] = useAutoFallback();
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const labelId = useId();
@@ -102,7 +104,22 @@ export function Composer({
           className="scrollbar-thin block max-h-[220px] w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-[15px] leading-relaxed text-foreground outline-none placeholder:text-subtle"
         />
         <div className="flex items-center justify-between gap-2 px-2 pb-2">
-          <ModelSelect value={model} onChange={onModelChange} models={models} disabled={isBusy} />
+          <div className="flex min-w-0 items-center gap-1">
+            <ModelSelect value={model} onChange={onModelChange} models={models} providers={providers} disabled={isBusy} />
+            <label
+              className="hidden cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-subtle transition-colors hover:text-muted-foreground sm:flex"
+              title="When on, UNBOUND switches to another available model if the chosen one fails before answering."
+            >
+              <input
+                type="checkbox"
+                checked={autoFallback}
+                onChange={(e) => setAutoFallback(e.target.checked)}
+                disabled={isBusy}
+                className="size-3 accent-[var(--brand)]"
+              />
+              Auto-switch
+            </label>
+          </div>
           <div className="flex items-center gap-2">
             <span
               className={cn("hidden text-[11px] tabular-nums sm:inline", isTooLong ? "text-destructive" : "text-subtle")}

@@ -48,20 +48,17 @@ export function toErrorEvent(error: unknown): Extract<GenerationEvent, { type: "
 function mapApiError(error: ApiError): { code: ChatErrorCode; message: string } {
   switch (error.status) {
     case 429:
-      return { code: "rate_limited", message: "The AI service is busy. Please wait a moment and try again." };
+      return { code: "rate_limited", message: "This model is temporarily busy." };
     case 400:
     case 401:
     case 403:
-      return {
-        code: "upstream_error",
-        message: "The AI service rejected the request. Check the server API key and model configuration.",
-      };
+      return { code: "upstream_error", message: "Google Gemini rejected this request. Check the server configuration." };
     case 404:
-      return { code: "upstream_error", message: "The selected AI model is not available right now." };
+      return { code: "upstream_error", message: "This model is no longer available from its provider. Please pick another model." };
     case 503:
-      return { code: "upstream_error", message: "The AI model is under heavy load. Please try again shortly." };
+      return { code: "upstream_error", message: "Google Gemini is temporarily unavailable." };
     default:
-      return { code: "upstream_error", message: "The AI service is temporarily unavailable. Please try again." };
+      return { code: "upstream_error", message: "Google Gemini is temporarily unavailable." };
   }
 }
 
