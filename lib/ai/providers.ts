@@ -41,6 +41,13 @@ export function getProviderConfig(provider: ProviderId): ProviderConfig | null {
         : null;
     }
 
+    case "cerebras": {
+      const apiKey = env("CEREBRAS_API_KEY");
+      return apiKey
+        ? { kind: "openai-compatible", baseUrl: "https://api.cerebras.ai/v1", apiKey, supportsStreamUsage: true }
+        : null;
+    }
+
     case "openrouter": {
       const apiKey = env("OPENROUTER_API_KEY");
       if (!apiKey) return null;
@@ -90,6 +97,7 @@ export function providerNotConfiguredMessage(provider: ProviderId): string {
   const envVar: Record<ProviderId, string> = {
     gemini: "GEMINI_API_KEY",
     groq: "GROQ_API_KEY",
+    cerebras: "CEREBRAS_API_KEY",
     openrouter: "OPENROUTER_API_KEY",
     huggingface: "HF_TOKEN",
     ollama: "OLLAMA_BASE_URL",

@@ -118,7 +118,12 @@ export async function* streamOpenAICompatible(
     // The provider says the model is gone: refresh the picker on the next render.
     if (response.status === 404 && options.onModelUnavailable) options.onModelUnavailable();
 
-    yield { type: "error", ...mapHttpError(response.status, providerLabel, model, detail) };
+    yield {
+      type: "error",
+      ...mapHttpError(response.status, providerLabel, model, detail),
+      status: response.status,
+      retryAfterMs: waitMs ?? parseRetryAfter(detail, response.headers.get("retry-after")) ?? undefined,
+    };
     return;
   }
 
@@ -136,10 +141,24 @@ export async function* streamOpenAICompatible(
       }
 
       if (chunk.error) {
+        // OpenRouter and others report upstream failures inside the stream,
+        // with the HTTP-style code in the payload. Surface it like a header.
         const reason = providerReason(JSON.stringify(chunk.error));
+        const code = Number(chunk.error.code);
+        const status = Number.isFinite(code) && code >= 400 && code <= 599 ? code : undefined;
+        if (status === 429) {
+          yield {
+            type: "error",
+            code: "rate_limited",
+            status,
+            message: `${providerLabel} is rate-limiting ${model}${reason ? ` (${reason})` : ""}. Wait a moment or pick another model.`,
+          };
+          return;
+        }
         yield {
           type: "error",
           code: "upstream_error",
+          status,
           message: `${providerLabel} returned an error mid-stream${reason ? `: ${reason}` : ""}. Please try again.`,
         };
         return;
@@ -218,6 +237,18 @@ async function safeErrorDetail(response: Response): Promise<string> {
 const MAX_AUTO_WAIT_MS = 12_000;
 
 /**
+ * A 403 that is about the *model's* availability to this kind of client, not
+ * about the key. Phrased generically so it isn't tied to any one provider or
+ * model: "only available on/to/through/via …", "not available to …",
+ * "requires approval", "restricted to …".
+ */
+function isRestrictionMessage(reason: string): boolean {
+  return /only (?:available|accessible|offered) (?:on|to|through|via|for)|not available (?:to|for|through)|requires? (?:approval|allowlist|whitelist)|restricted to|approved (?:clients|apps|harness)|agentic harness/i.test(
+    reason,
+  );
+}
+
+/**
  * Reads a wait hint from a 429: the `Retry-After` header (seconds) or a
  * "try again in 2.145s" phrase in the body. Null when the provider gave none.
  */
@@ -276,8 +307,15 @@ function mapHttpError(
   const suffix = reason ? ` (${reason})` : "";
 
   switch (status) {
-    case 401:
     case 403:
+      if (isRestrictionMessage(reason)) {
+        return {
+          code: "restricted",
+          message: `${providerLabel} doesn't serve ${model} to this app${suffix}. It has been hidden from the picker.`,
+        };
+      }
+      return { code: "upstream_error", message: `${providerLabel} rejected the server's API key${suffix}.` };
+    case 401:
       return { code: "upstream_error", message: `${providerLabel} rejected the server's API key${suffix}.` };
     case 402:
       return {

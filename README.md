@@ -39,6 +39,7 @@ Next.js 16 · React 19 · TypeScript · Tailwind CSS v4 · shadcn/ui · Lucide �
 | `GEMINI_API_KEY` | Yes | Google Gemini. **Server-only**; never exposed to the browser. |
 | `GEMINI_MODEL` | No | Default model as `provider:model` (default `gemini:gemini-3.6-flash`). |
 | `GROQ_API_KEY` | No | Enables Groq. Models discovered live from `/models`. |
+| `CEREBRAS_API_KEY` | No | Enables Cerebras. Models discovered live from `/models`. |
 | `OPENROUTER_API_KEY` | No | Enables OpenRouter (curated `:free` models in `lib/ai/models.ts`). |
 | `OPENROUTER_SITE_URL`, `OPENROUTER_APP_NAME` | No | Optional OpenRouter attribution headers. |
 | `HF_TOKEN` | No | Enables Hugging Face Inference Providers (router). |
@@ -56,12 +57,20 @@ Gemini for backward compatibility). Gemini uses its native SDK; Groq, OpenRouter
 Face and Ollama share one OpenAI-compatible streaming client. The chat composer and Settings
 show only providers whose keys are configured.
 
-Model lists for **Groq, OpenRouter and Ollama are discovered live** from each provider's
-model API (filtered to active, text-in/text-out chat models; OpenRouter to free-priced
-models plus the `openrouter/free` router) and cached for five minutes, so no ids are
-hard-coded for them. Gemini and Hugging Face use the curated `MODEL_CATALOG` in
+Model lists for **Groq, Cerebras, OpenRouter and Ollama are discovered live** from each
+provider's model API (filtered to active, text-in/text-out chat models; OpenRouter to
+free-priced models plus the `openrouter/free` router) and cached for five minutes, so no ids
+are hard-coded for them. Gemini and Hugging Face use the curated `MODEL_CATALOG` in
 `lib/ai/models.ts`. Provider errors (400/401/402/404/429/5xx) are surfaced to the user with
 the provider's own reason attached.
+
+**Health and fallback** (`lib/ai/health.ts`, `lib/ai/generate.ts`): each model carries a
+temporary, in-memory state — available, busy, rate-limited, unavailable, restricted. If the
+chosen model is rate-limited, restricted, overloaded, silent for 30 s, or answers with an
+empty completion *before any text has streamed*, the request moves to another healthy model
+from the same provider (at most three models per request) and the reply is footnoted with the
+model that answered. 429s, timeouts and empty replies expire after a few minutes; a 403 that
+says the model is only available to approved clients removes it from the picker.
 
 ## Database
 

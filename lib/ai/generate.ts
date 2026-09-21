@@ -1,10 +1,18 @@
 import "server-only";
 
 import { getAvailableModels, invalidateModelCache, OPENROUTER_FREE_ROUTER_ID } from "@/lib/ai/discovery";
+import {
+  isModelUsable,
+  markBusy,
+  markHealthy,
+  markRateLimited,
+  markRestricted,
+  markUnavailable,
+} from "@/lib/ai/health";
 import { parseModelId } from "@/lib/ai/models";
 import { streamOpenAICompatible } from "@/lib/ai/openai-compatible";
 import { getProviderConfig, providerNotConfiguredMessage } from "@/lib/ai/providers";
-import { PROVIDER_LABELS, type GenerationEvent, type GenerationOptions } from "@/lib/ai/types";
+import { PROVIDER_LABELS, type GenerationEvent, type GenerationOptions, type ProviderId } from "@/lib/ai/types";
 import { streamGemini } from "@/lib/gemini/stream";
 
 /**
@@ -35,35 +43,164 @@ export async function* streamGeneration(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Fallback layer
+// ---------------------------------------------------------------------------
+
 /** Total attempts per request, including the model the user chose. */
 const MAX_FALLBACK_ATTEMPTS = 3;
+
+/** How long a model may take to produce its first token before we move on. */
+const FIRST_TOKEN_TIMEOUT_MS = 30_000;
+
+/** Providers whose models may stand in for each other. */
+const FALLBACK_PROVIDERS: ReadonlySet<ProviderId> = new Set(["openrouter", "groq", "cerebras", "gemini"]);
 
 function isOpenRouterFree(qualifiedId: string): boolean {
   const { provider, model } = parseModelId(qualifiedId);
   return provider === "openrouter" && (model === OPENROUTER_FREE_ROUTER_ID || model.endsWith(":free"));
 }
 
-/**
- * Ordered alternatives for a rate-limited OpenRouter free model: the free
- * router first (it routes around busy models itself), then the other free
- * models currently listed by OpenRouter, excluding anything already tried.
- */
-async function openRouterFallbacks(tried: Set<string>): Promise<string[]> {
-  const free = (await getAvailableModels()).filter((m) => m.provider === "openrouter" && isOpenRouterFree(m.id));
-  const router = free.find((m) => m.model === OPENROUTER_FREE_ROUTER_ID);
-  const ordered = [...(router ? [router] : []), ...free.filter((m) => m.model !== OPENROUTER_FREE_ROUTER_ID)];
-  return ordered.map((m) => m.id).filter((id) => !tried.has(id));
+function isFallbackEligible(qualifiedId: string): boolean {
+  const { provider } = parseModelId(qualifiedId);
+  if (!FALLBACK_PROVIDERS.has(provider)) return false;
+  // On OpenRouter only the free tier stands in for the free tier.
+  return provider !== "openrouter" || isOpenRouterFree(qualifiedId);
 }
 
 /**
- * streamGeneration with automatic fallback for OpenRouter's shared free tier.
+ * Ordered alternatives for a failing model: healthy models from the same
+ * provider that haven't been tried. For OpenRouter, the free router goes
+ * first (it routes around busy models itself) and only free models qualify.
+ */
+async function fallbackCandidates(current: string, tried: Set<string>): Promise<string[]> {
+  const { provider } = parseModelId(current);
+  const same = (await getAvailableModels()).filter(
+    (m) => m.provider === provider && !tried.has(m.id) && isModelUsable(m.id) && (provider !== "openrouter" || isOpenRouterFree(m.id)),
+  );
+  if (provider === "openrouter") {
+    const router = same.find((m) => m.model === OPENROUTER_FREE_ROUTER_ID);
+    return [...(router ? [router] : []), ...same.filter((m) => m.model !== OPENROUTER_FREE_ROUTER_ID)].map((m) => m.id);
+  }
+  // Elsewhere, prefer the most capable sibling (largest context) first.
+  return [...same].sort((a, b) => (b.contextLength ?? 0) - (a.contextLength ?? 0)).map((m) => m.id);
+}
+
+type AttemptOutcome =
+  | { kind: "finished" }
+  | { kind: "retry"; reason: string; surface: GenerationEvent };
+
+type ErrorEvent = Extract<GenerationEvent, { type: "error" }>;
+
+/** Errors worth trying another model for — only ever before the first token. */
+function classifyRetryable(event: ErrorEvent): "rate_limited" | "restricted" | "busy" | null {
+  if (event.code === "rate_limited") return "rate_limited";
+  if (event.code === "restricted") return "restricted";
+  if (event.status !== undefined && event.status >= 500) return "busy";
+  // An upstream failure inside the stream with no usable status (a starved
+  // free-tier route, typically) — the model is busy; someone else can answer.
+  if (event.code === "upstream_error" && event.status === undefined && /mid-stream/.test(event.message)) return "busy";
+  return null;
+}
+
+/**
+ * Runs one model attempt. Yields the events callers should see; returns
+ * whether the request finished or should move to another model.
+ */
+async function* runAttempt(
+  options: GenerationOptions,
+  model: string,
+): AsyncGenerator<GenerationEvent, AttemptOutcome, undefined> {
+  const inner = new AbortController();
+  const onOuterAbort = () => inner.abort();
+  options.signal?.addEventListener("abort", onOuterAbort, { once: true });
+  if (options.signal?.aborted) inner.abort();
+
+  const stream = streamGeneration({ ...options, model, signal: inner.signal });
+  let produced = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const firstTokenTimeout = new Promise<{ timedOut: true }>((resolve) => {
+    timer = setTimeout(() => resolve({ timedOut: true }), FIRST_TOKEN_TIMEOUT_MS);
+  });
+  const clear = () => {
+    if (timer) clearTimeout(timer);
+    options.signal?.removeEventListener("abort", onOuterAbort);
+  };
+
+  try {
+    while (true) {
+      const step = produced
+        ? await stream.next()
+        : await Promise.race([stream.next(), firstTokenTimeout]);
+
+      if ("timedOut" in step) {
+        inner.abort();
+        void stream.return(undefined).catch(() => undefined);
+        markBusy(model, `no first token within ${FIRST_TOKEN_TIMEOUT_MS / 1000}s`);
+        return {
+          kind: "retry",
+          reason: "The model didn't start responding in time.",
+          surface: { type: "error", code: "timeout", message: "The model didn't start responding in time. Please try again." },
+        };
+      }
+
+      if (step.done) return { kind: "finished" };
+      const event = step.value;
+
+      if (event.type === "text") {
+        if (event.text.length > 0) {
+          if (!produced) clear();
+          produced = true;
+          yield event;
+        }
+        continue;
+      }
+
+      if (event.type === "done") {
+        if (!produced) {
+          markUnavailable(model, "empty completion");
+          return {
+            kind: "retry",
+            reason: "The model returned an empty response.",
+            surface: event, // callers treat done-without-text as an empty reply
+          };
+        }
+        markHealthy(model);
+        yield event;
+        return { kind: "finished" };
+      }
+
+      if (event.type === "error") {
+        if (options.signal?.aborted || event.code === "aborted") {
+          yield event;
+          return { kind: "finished" };
+        }
+        const retryable = produced ? null : classifyRetryable(event);
+        if (retryable === "rate_limited") markRateLimited(model, event.message, event.retryAfterMs);
+        else if (retryable === "restricted") markRestricted(model, event.message);
+        else if (retryable === "busy") markBusy(model, event.message);
+
+        if (retryable) return { kind: "retry", reason: event.message, surface: event };
+        yield event;
+        return { kind: "finished" };
+      }
+
+      yield event; // fallback events from nested layers (none today)
+    }
+  } finally {
+    clear();
+  }
+}
+
+/**
+ * streamGeneration with automatic fallback.
  *
- * If the chosen free model is rate-limited *before any text has streamed*,
- * the request is retried on another configured free model (at most
- * MAX_FALLBACK_ATTEMPTS models in total). A `fallback` event announces each
- * switch so callers can record which model actually answered. Once text has
- * started, no retry happens — a partial answer from one model is never
- * spliced with another's.
+ * If the chosen model is rate-limited, restricted, overloaded (5xx), silent
+ * for FIRST_TOKEN_TIMEOUT_MS, or answers with an empty completion — all
+ * *before any text has streamed* — the request is retried on another healthy
+ * model from the same provider, at most MAX_FALLBACK_ATTEMPTS models in total.
+ * Each switch is announced with a `fallback` event so callers can record
+ * which model actually answered. Once text has started, no retry happens.
  */
 export async function* streamWithFallback(
   options: GenerationOptions,
@@ -73,47 +210,18 @@ export async function* streamWithFallback(
 
   for (let attempt = 1; ; attempt++) {
     tried.add(current);
-    let produced = false;
-    let rateLimited: Extract<GenerationEvent, { type: "error" }> | null = null;
-    let doneEvent: Extract<GenerationEvent, { type: "done" }> | null = null;
+    const outcome = yield* runAttempt(options, current);
+    if (outcome.kind === "finished") return;
 
-    for await (const event of streamGeneration({ ...options, model: current })) {
-      if (event.type === "error" && event.code === "rate_limited" && !produced) {
-        rateLimited = event;
-        break;
-      }
-      if (event.type === "text" && event.text.length > 0) produced = true;
-      if (event.type === "done") {
-        doneEvent = event;
-        break; // decide below whether an empty completion should fall back
-      }
-      yield event;
-    }
-
-    if (doneEvent) {
-      // A starved free-tier model often "succeeds" with an empty completion;
-      // treat that like a rate limit so another model gets a chance.
-      if (!produced && isOpenRouterFree(current) && attempt < MAX_FALLBACK_ATTEMPTS && !options.signal?.aborted) {
-        rateLimited = { type: "error", code: "rate_limited", message: "The model returned an empty response." };
-      } else {
-        yield doneEvent;
-        return;
-      }
-    }
-
-    if (!rateLimited) return;
-
-    const canFallback = isOpenRouterFree(current) && attempt < MAX_FALLBACK_ATTEMPTS && !options.signal?.aborted;
-    const next = canFallback ? (await openRouterFallbacks(tried))[0] : undefined;
+    const canFallback = isFallbackEligible(current) && attempt < MAX_FALLBACK_ATTEMPTS && !options.signal?.aborted;
+    const next = canFallback ? (await fallbackCandidates(current, tried))[0] : undefined;
     if (!next) {
-      // Out of alternatives: surface the original outcome.
-      if (doneEvent) yield doneEvent;
-      else yield rateLimited;
+      yield outcome.surface;
       return;
     }
 
-    console.warn(`[fallback] ${current} rate-limited; retrying with ${next} (attempt ${attempt + 1}/${MAX_FALLBACK_ATTEMPTS})`);
-    yield { type: "fallback", from: current, to: next, reason: rateLimited.message };
+    console.warn(`[fallback] ${current}: ${outcome.reason} — retrying with ${next} (attempt ${attempt + 1}/${MAX_FALLBACK_ATTEMPTS})`);
+    yield { type: "fallback", from: current, to: next, reason: outcome.reason };
     current = next;
   }
 }

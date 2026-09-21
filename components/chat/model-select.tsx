@@ -4,7 +4,7 @@ import { useId } from "react";
 import { ChevronDown } from "lucide-react";
 
 import { describeModel, groupByProvider, qualifyModelId } from "@/lib/ai/models";
-import type { ModelOption } from "@/lib/ai/types";
+import { HEALTH_LABELS, type ModelOption } from "@/lib/ai/types";
 import { cn } from "@/lib/utils";
 
 interface ModelSelectProps {
@@ -29,9 +29,11 @@ export function ModelSelect({ value, onChange, models, disabled, className, labe
   const id = useId();
   const current = qualifyModelId(value);
   const groups = groupByProvider(models);
-  const known = models.some((m) => m.id === current);
+  const selected = models.find((m) => m.id === current);
+  const known = Boolean(selected);
   const described = describeModel(current, models);
   const isDisabled = disabled || models.length === 0;
+  const healthSuffix = (m: ModelOption) => (m.health ? ` · ${HEALTH_LABELS[m.health]}` : "");
 
   return (
     <div className={cn("relative inline-flex items-center", className)}>
@@ -61,6 +63,7 @@ export function ModelSelect({ value, onChange, models, disabled, className, labe
               {group.models.map((m) => (
                 <option key={m.id} value={m.id} title={m.description}>
                   {group.label} · {m.label}
+                  {healthSuffix(m)}
                 </option>
               ))}
             </optgroup>
@@ -83,6 +86,11 @@ export function ModelSelect({ value, onChange, models, disabled, className, labe
             {described.label}
             {!known ? " (unavailable)" : ""}
           </span>
+          {selected?.health ? (
+            <span className="shrink-0 rounded-sm bg-raised px-1 py-px text-[10px] text-subtle">
+              {HEALTH_LABELS[selected.health]}
+            </span>
+          ) : null}
           <ChevronDown aria-hidden="true" className="absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-subtle" />
         </div>
       </div>

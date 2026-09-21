@@ -91,6 +91,10 @@ export type ChatErrorCode =
   | "upstream_error"
   | "network_error"
   | "storage_error"
+  /** The model produced nothing within the first-token window. */
+  | "timeout"
+  /** The provider restricts this model to specific clients. */
+  | "restricted"
   | "aborted";
 
 /** JSON error body for non-streaming failures (4xx/5xx before streaming). */

@@ -34,7 +34,7 @@ export function toErrorEvent(error: unknown): Extract<GenerationEvent, { type: "
       message: "The AI service is not configured. Set GEMINI_API_KEY on the server.",
     };
   }
-  if (error instanceof ApiError) return { type: "error", ...mapApiError(error) };
+  if (error instanceof ApiError) return { type: "error", ...mapApiError(error), status: error.status };
   if (error instanceof Error && error.name === "AbortError") {
     return { type: "error", code: "aborted", message: "The request was cancelled." };
   }
