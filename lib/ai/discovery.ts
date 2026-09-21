@@ -1,30 +1,18 @@
 import "server-only";
 
-import { getModelHealth } from "@/lib/ai/health";
+import { getModelHealth, isRestricted } from "@/lib/ai/health";
 import { MODEL_CATALOG } from "@/lib/ai/models";
 import { getEnabledProviders, getProviderConfig } from "@/lib/ai/providers";
-import {
-  PROVIDER_IDS,
-  PROVIDER_LABELS,
-  PROVIDER_STATE_NOTES,
-  type ModelOption,
-  type ProviderId,
-  type ProviderStatus,
-} from "@/lib/ai/types";
+import type { ModelOption, ProviderId } from "@/lib/ai/types";
 
 /**
  * Builds the list of models the current server can actually serve.
  *
- * Groq, Cerebras, OpenRouter and Ollama are discovered live from the
- * providers' own model endpoints and filtered structurally (modalities,
- * pricing, activity), so nothing here depends on remembering model ids.
- * Gemini and Hugging Face use the curated catalog. Results are cached
- * in-process briefly so the app layout stays fast; a failed discovery falls
- * back to the last good list.
- *
- * On every read the list is annotated with the health store's current view
- * (busy / rate-limited / timeout / unavailable / restricted). Nothing is ever
- * removed for health reasons — the picker shows the state instead.
+ * Groq, OpenRouter and Ollama are discovered live from the providers' own
+ * model endpoints and filtered structurally (modalities, pricing, activity),
+ * so nothing here depends on remembering model ids. Gemini and Hugging Face
+ * use the curated catalog. Results are cached in-process briefly so the app
+ * layout stays fast; a failed discovery falls back to the last good list.
  */
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -40,70 +28,27 @@ interface CacheEntry {
 
 const cache = new Map<ProviderId, CacheEntry>();
 
+/**
+ * Models the server can serve right now: discovered/curated per provider,
+ * minus anything the provider has refused to serve us (restricted), each
+ * annotated with its current health so the picker can hint at busy models.
+ */
 export async function getAvailableModels(): Promise<ModelOption[]> {
   const enabled = getEnabledProviders();
   const lists = await Promise.all(enabled.map((provider) => modelsFor(provider)));
-  return lists.flat().map(withHealth);
-}
-
-/**
- * Status of every provider UNBOUND knows, configured or not, so the picker
- * can show "API key required" / "Local server offline" instead of hiding
- * the provider. A provider becomes ready the moment its variable is set
- * (and, for Ollama, its server answers) — no code change needed.
- */
-export async function getProviderStatuses(): Promise<ProviderStatus[]> {
-  return Promise.all(
-    PROVIDER_IDS.map(async (id): Promise<ProviderStatus> => {
-      const label = PROVIDER_LABELS[id];
-      const config = getProviderConfig(id);
-      if (!config) {
-        return id === "ollama"
-          ? { id, label, state: "offline", note: PROVIDER_STATE_NOTES.offline }
-          : { id, label, state: "missing_key", note: PROVIDER_STATE_NOTES.missing_key };
-      }
-      if (id === "ollama") {
-        const reachable = await ollamaReachable();
-        return reachable ? { id, label, state: "ready" } : { id, label, state: "offline", note: PROVIDER_STATE_NOTES.offline };
-      }
-      return { id, label, state: "ready" };
-    }),
-  );
-}
-
-let ollamaProbe: { at: number; ok: boolean } | null = null;
-
-async function ollamaReachable(): Promise<boolean> {
-  if (ollamaProbe && Date.now() - ollamaProbe.at < 30_000) return ollamaProbe.ok;
-  const config = getProviderConfig("ollama");
-  let ok = false;
-  if (config && config.kind === "openai-compatible") {
-    try {
-      const res = await fetch(`${config.baseUrl.replace(/\/v1$/, "")}/api/tags`, { signal: AbortSignal.timeout(1_500), cache: "no-store" });
-      ok = res.ok;
-    } catch {
-      ok = false;
-    }
-  }
-  ollamaProbe = { at: Date.now(), ok };
-  if (ok) cache.delete("ollama"); // server just (re)appeared: rediscover its models
-  return ok;
+  return lists
+    .flat()
+    .filter((m) => !isRestricted(m.id))
+    .map((m) => {
+      const health = getModelHealth(m.id);
+      return health.state === "available" ? m : { ...m, health };
+    });
 }
 
 /** Forces a fresh discovery next call (e.g. after a provider says a model is gone). */
 export function invalidateModelCache(provider?: ProviderId): void {
   if (provider) cache.delete(provider);
   else cache.clear();
-}
-
-function withHealth(model: ModelOption): ModelOption {
-  const { state } = getModelHealth(model.id);
-  if (state === "available") {
-    const { health: _drop, ...rest } = model;
-    void _drop;
-    return rest;
-  }
-  return { ...model, health: state };
 }
 
 async function modelsFor(provider: ProviderId): Promise<ModelOption[]> {
@@ -114,7 +59,14 @@ async function modelsFor(provider: ProviderId): Promise<ModelOption[]> {
   if (cached && cached.expires > Date.now()) return cached.models;
 
   try {
-    const models = await discover(provider);
+    const models =
+      provider === "groq"
+        ? await discoverGroq()
+        : provider === "cerebras"
+          ? await discoverCerebras()
+          : provider === "openrouter"
+            ? await discoverOpenRouter()
+            : await discoverOllama();
     cache.set(provider, { expires: Date.now() + CACHE_TTL_MS, models });
     return models;
   } catch (error) {
@@ -123,21 +75,6 @@ async function modelsFor(provider: ProviderId): Promise<ModelOption[]> {
     if (cached) return cached.models;
     // OpenRouter's router id is stable even when its catalogue can't be read.
     return provider === "openrouter" ? [openRouterRouterOption(200_000)] : [];
-  }
-}
-
-function discover(provider: ProviderId): Promise<ModelOption[]> {
-  switch (provider) {
-    case "groq":
-      return discoverGroq();
-    case "cerebras":
-      return discoverCerebras();
-    case "openrouter":
-      return discoverOpenRouter();
-    case "ollama":
-      return discoverOllama();
-    default:
-      return Promise.resolve([]);
   }
 }
 
@@ -151,19 +88,6 @@ function formatContext(tokens: number | undefined): string {
   if (!tokens) return "";
   return tokens >= 1_000_000 ? `${Math.round(tokens / 100_000) / 10}M context` : `${Math.round(tokens / 1000)}K context`;
 }
-
-/** "openai/gpt-oss-120b" → "GPT OSS 120B", "qwen-3.8-27b" → "Qwen 3.8 27B". */
-function prettifyId(id: string): string {
-  const tail = id.split("/").pop() ?? id;
-  return tail
-    .split(/[-_]/)
-    .filter(Boolean)
-    .map((part) => (/^\d/.test(part) || /^[a-z]{1,3}$/i.test(part) && part.length <= 3 ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1)))
-    .join(" ");
-}
-
-/** Classifier/guard/embedding models answer with labels or vectors, not prose. */
-const NON_CHAT_ID = /guard|safeguard|moderation|embed|content-safety|whisper|tts|lyria|transcribe/i;
 
 // ---------------------------------------------------------------------------
 // Groq — https://api.groq.com/openai/v1/models (authenticated)
@@ -179,6 +103,9 @@ interface GroqModel {
   output_modalities?: string[];
 }
 
+/** Classifier/guard models answer with labels, not prose. */
+const GROQ_NON_CHAT = /guard|safeguard|moderation|embed/i;
+
 async function discoverGroq(): Promise<ModelOption[]> {
   const config = getProviderConfig("groq");
   if (!config || config.kind !== "openai-compatible" || !config.apiKey) return [];
@@ -193,13 +120,13 @@ async function discoverGroq(): Promise<ModelOption[]> {
         m.active !== false &&
         (m.input_modalities ?? ["text"]).includes("text") &&
         (m.output_modalities ?? ["text"]).includes("text") &&
-        !NON_CHAT_ID.test(m.id),
+        !GROQ_NON_CHAT.test(m.id),
     )
     .map((m) => ({
       id: `groq:${m.id}`,
       provider: "groq" as const,
       model: m.id,
-      label: m.name?.trim() || prettifyId(m.id),
+      label: m.name?.trim() || m.id,
       description: formatContext(m.context_window),
       maxOutputTokens: m.max_completion_tokens,
       contextLength: m.context_window,
@@ -209,13 +136,20 @@ async function discoverGroq(): Promise<ModelOption[]> {
 
 // ---------------------------------------------------------------------------
 // Cerebras — https://api.cerebras.ai/v1/models (authenticated)
-// The list is minimal ({ id, object, created, owned_by }); every entry is a
-// chat model, so only the generic non-chat filter applies.
 // ---------------------------------------------------------------------------
 
 interface CerebrasModel {
   id?: string;
   owned_by?: string;
+}
+
+/** "qwen-3.8-27b" → "Qwen 3.8 27B", "gpt-oss-120b" → "GPT OSS 120B". */
+function prettifyModelId(id: string): string {
+  return id
+    .split(/[-_/]/)
+    .filter(Boolean)
+    .map((part) => (/^\d/.test(part) ? part.toUpperCase() : /^(gpt|oss|llm|ai)$/i.test(part) ? part.toUpperCase() : part[0].toUpperCase() + part.slice(1)))
+    .join(" ");
 }
 
 async function discoverCerebras(): Promise<ModelOption[]> {
@@ -224,14 +158,13 @@ async function discoverCerebras(): Promise<ModelOption[]> {
   const body = (await fetchJson(`${config.baseUrl}/models`, { Authorization: `Bearer ${config.apiKey}` })) as {
     data?: CerebrasModel[];
   };
-
   return (body.data ?? [])
-    .filter((m): m is CerebrasModel & { id: string } => typeof m.id === "string" && !NON_CHAT_ID.test(m.id))
+    .filter((m): m is CerebrasModel & { id: string } => typeof m.id === "string")
     .map((m) => ({
       id: `cerebras:${m.id}`,
       provider: "cerebras" as const,
       model: m.id,
-      label: prettifyId(m.id),
+      label: prettifyModelId(m.id),
       description: m.owned_by ? `by ${m.owned_by}` : undefined,
     }))
     .sort((a, b) => a.label.localeCompare(b.label));
@@ -249,6 +182,9 @@ interface OpenRouterModel {
   architecture?: { output_modalities?: string[] };
   top_provider?: { max_completion_tokens?: number | null };
 }
+
+/** Safety classifiers and audio generators aren't chat models. */
+const OPENROUTER_NON_CHAT = /content-safety|guard|moderation|lyria|tts|whisper/i;
 
 function isFree(m: OpenRouterModel): boolean {
   return Number(m.pricing?.prompt ?? 1) === 0 && Number(m.pricing?.completion ?? 1) === 0;
@@ -277,7 +213,7 @@ async function discoverOpenRouter(): Promise<ModelOption[]> {
       typeof m.id === "string" &&
       isFree(m) &&
       (m.architecture?.output_modalities ?? ["text"]).every((o) => o === "text") &&
-      !NON_CHAT_ID.test(m.id),
+      !OPENROUTER_NON_CHAT.test(m.id),
   );
 
   const router = free.find((m) => m.id === OPENROUTER_FREE_ROUTER_ID);

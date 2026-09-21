@@ -77,11 +77,11 @@ export async function* streamOpenAICompatible(
         yield { type: "error", code: "aborted", message: "The request was cancelled." };
         return;
       }
-      console.error(`[${providerLabel}] request failed for ${model}:`, error instanceof Error ? error.message : error);
+      console.error(`[${providerLabel}] request failed:`, error);
       yield {
         type: "error",
         code: "network_error",
-        message: providerLabel === "Ollama (local)" ? "Ollama's local server is offline." : `Couldn't reach ${providerLabel}.`,
+        message: `Could not reach ${providerLabel}. ${providerLabel === "Ollama (local)" ? "Is Ollama running?" : "Please try again."}`,
       };
       return;
     }
@@ -118,12 +118,21 @@ export async function* streamOpenAICompatible(
     // The provider says the model is gone: refresh the picker on the next render.
     if (response.status === 404 && options.onModelUnavailable) options.onModelUnavailable();
 
-    yield {
-      type: "error",
-      ...mapHttpError(response.status, providerLabel, model, detail),
-      status: response.status,
-      retryAfterMs: waitMs ?? parseRetryAfter(detail, response.headers.get("retry-after")) ?? undefined,
-    };
+    // A 403 about *this model* (not the key) means the provider won't serve it
+    // to us — e.g. "only available on approved harnesses". The same key works
+    // on the provider's other models, so this is a restriction, not auth.
+    if (response.status === 403 && isModelRestriction(detail)) {
+      const reason = providerReason(detail);
+      options.onModelRestricted?.(reason);
+      yield {
+        type: "error",
+        code: "model_restricted",
+        message: `${providerLabel} doesn't allow ${model} for this app${reason ? ` (${reason})` : ""}. It has been hidden from the picker.`,
+      };
+      return;
+    }
+
+    yield { type: "error", ...mapHttpError(response.status, providerLabel, model, detail) };
     return;
   }
 
@@ -141,26 +150,11 @@ export async function* streamOpenAICompatible(
       }
 
       if (chunk.error) {
-        // OpenRouter and others report upstream failures inside the stream,
-        // with the HTTP-style code in the payload. Surface it like a header.
         const reason = providerReason(JSON.stringify(chunk.error));
-        console.error(`[${providerLabel}] in-stream error for ${model}: ${reason || "(no detail)"}`);
-        const code = Number(chunk.error.code);
-        const status = Number.isFinite(code) && code >= 400 && code <= 599 ? code : undefined;
-        if (status === 429) {
-          yield {
-            type: "error",
-            code: "rate_limited",
-            status,
-            message: "This model is temporarily busy.",
-          };
-          return;
-        }
         yield {
           type: "error",
           code: "upstream_error",
-          status,
-          message: `${providerLabel} is temporarily unavailable.`,
+          message: `${providerLabel} returned an error mid-stream${reason ? `: ${reason}` : ""}. Please try again.`,
         };
         return;
       }
@@ -234,20 +228,24 @@ async function safeErrorDetail(response: Response): Promise<string> {
   }
 }
 
+/**
+ * Phrases providers use when a 403 is about model access policy rather than
+ * the API key. Matched against the sanitised body, never against model ids.
+ */
+const MODEL_RESTRICTION_PATTERN =
+  /only available (on|to|through|via|for)|not available (to|for) (your|this)|requires? (approval|access|allowlist|whitelist)|not (been )?(approved|allowlisted|whitelisted)|restricted to|is restricted|access to (this|the) model|model is not (enabled|permitted)|not permitted to use/i;
+
+function isModelRestriction(detail: string): boolean {
+  return MODEL_RESTRICTION_PATTERN.test(providerReason(detail));
+}
+
+/** A 429 that is about the account's daily/monthly allowance, not a busy model. */
+export function isDailyQuota(reason: string): boolean {
+  return /per[- ]day|per[- ]month|daily|monthly|quota/i.test(reason);
+}
+
 /** Longest provider-quoted wait we'll absorb silently before surfacing the 429. */
 const MAX_AUTO_WAIT_MS = 12_000;
-
-/**
- * A 403 that is about the *model's* availability to this kind of client, not
- * about the key. Phrased generically so it isn't tied to any one provider or
- * model: "only available on/to/through/via …", "not available to …",
- * "requires approval", "restricted to …".
- */
-function isRestrictionMessage(reason: string): boolean {
-  return /only (?:available|accessible|offered) (?:on|to|through|via|for)|not available (?:to|for|through)|requires? (?:approval|allowlist|whitelist)|restricted to|approved (?:clients|apps|harness)|agentic harness/i.test(
-    reason,
-  );
-}
 
 /**
  * Reads a wait hint from a 429: the `Retry-After` header (seconds) or a
@@ -298,10 +296,6 @@ function providerReason(detail: string): string {
     .slice(0, 240);
 }
 
-/**
- * User-facing messages. Deliberately non-technical: the provider's own
- * wording is logged server-side (see the console.error above) but not shown.
- */
 function mapHttpError(
   status: number,
   providerLabel: string,
@@ -309,33 +303,47 @@ function mapHttpError(
   detail: string,
 ): { code: ChatErrorCode; message: string } {
   const reason = providerReason(detail);
-  void model;
+  const suffix = reason ? ` (${reason})` : "";
 
   switch (status) {
-    case 403:
-      if (isRestrictionMessage(reason)) {
-        return { code: "restricted", message: "This model is currently restricted by its upstream provider." };
-      }
-      return { code: "upstream_error", message: `${providerLabel} rejected this app's API key. Check the server configuration.` };
     case 401:
-      return { code: "upstream_error", message: `${providerLabel} rejected this app's API key. Check the server configuration.` };
+    case 403:
+      return { code: "upstream_error", message: `${providerLabel} rejected the server's API key${suffix}.` };
     case 402:
-      return { code: "upstream_error", message: `${providerLabel} needs credits for this model. Please pick another model.` };
+      return {
+        code: "upstream_error",
+        message: `${providerLabel} needs credits for ${model}${suffix}. Pick a free model.`,
+      };
     case 404:
-      return { code: "upstream_error", message: "This model is no longer available from its provider. Please pick another model." };
+      return {
+        code: "upstream_error",
+        message: `${providerLabel} no longer serves ${model}${suffix}. Pick another model.`,
+      };
     case 400:
     case 422:
-      return { code: "upstream_error", message: `${providerLabel} rejected this request for the selected model.` };
+      return { code: "upstream_error", message: `${providerLabel} rejected the request for ${model}${suffix}.` };
     case 413:
-      return { code: "upstream_error", message: "This request is too large for this model's tier. Try a model with a larger limit." };
+      return {
+        code: "upstream_error",
+        message: `${providerLabel} says this request is too large for ${model}'s tier${suffix}. Pick a model with a bigger budget (Gemini or an OpenRouter free model) for this size of site.`,
+      };
     case 429:
-      return { code: "rate_limited", message: "This model is temporarily busy." };
+      if (isDailyQuota(reason)) {
+        return {
+          code: "quota_exhausted",
+          message: `${providerLabel}: the daily free quota for this account is used up${suffix}. It resets at 00:00 UTC — add credits to raise it, or use another provider for now.`,
+        };
+      }
+      return {
+        code: "rate_limited",
+        message: `${providerLabel} is rate-limiting ${model}${suffix}. Wait a moment or pick another model.`,
+      };
     case 500:
     case 502:
     case 503:
     case 504:
-      return { code: "upstream_error", message: `${providerLabel} is temporarily unavailable.` };
+      return { code: "upstream_error", message: `${providerLabel} is temporarily unavailable${suffix}. Please try again.` };
     default:
-      return { code: "upstream_error", message: `${providerLabel} returned an unexpected error.` };
+      return { code: "upstream_error", message: `${providerLabel} returned an unexpected error (${status})${suffix}.` };
   }
 }

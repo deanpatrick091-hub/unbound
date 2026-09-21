@@ -2,18 +2,17 @@ import "server-only";
 
 import { getAvailableModels, invalidateModelCache, OPENROUTER_FREE_ROUTER_ID } from "@/lib/ai/discovery";
 import {
-  isModelUsable,
-  markBusy,
+  isFallbackCandidate,
   markHealthy,
+  markProviderQuotaExhausted,
   markRateLimited,
   markRestricted,
-  markTimeout,
-  markUnavailable,
+  markSoftFailure,
 } from "@/lib/ai/health";
 import { parseModelId } from "@/lib/ai/models";
 import { streamOpenAICompatible } from "@/lib/ai/openai-compatible";
 import { getProviderConfig, providerNotConfiguredMessage } from "@/lib/ai/providers";
-import { PROVIDER_LABELS, type GenerationEvent, type GenerationOptions, type ProviderId } from "@/lib/ai/types";
+import { PROVIDER_LABELS, type GenerationEvent, type GenerationOptions } from "@/lib/ai/types";
 import { streamGemini } from "@/lib/gemini/stream";
 
 /**
@@ -41,242 +40,153 @@ export async function* streamGeneration(
     // A 404 means the live catalogue has moved on; drop the cached list so
     // the picker stops offering the model.
     onModelUnavailable: () => invalidateModelCache(provider),
+    // A policy 403 hides the model until the health entry expires.
+    onModelRestricted: (reason) => markRestricted(options.model, reason),
   });
 }
 
-// ---------------------------------------------------------------------------
-// Fallback layer
-// ---------------------------------------------------------------------------
-
 /** Total attempts per request, including the model the user chose. */
-const MAX_FALLBACK_ATTEMPTS = 4;
-
-/** How long a model may take to produce its first token before we move on. */
+const MAX_FALLBACK_ATTEMPTS = 3;
+/** If a model hasn't produced its first token by then, give another one a turn. */
 const FIRST_TOKEN_TIMEOUT_MS = 30_000;
-
-/** When the same provider has nothing healthy left, try these in order. */
-const CROSS_PROVIDER_ORDER: readonly ProviderId[] = ["gemini", "groq", "cerebras", "openrouter", "huggingface", "ollama"];
 
 function isOpenRouterFree(qualifiedId: string): boolean {
   const { provider, model } = parseModelId(qualifiedId);
   return provider === "openrouter" && (model === OPENROUTER_FREE_ROUTER_ID || model.endsWith(":free"));
 }
 
-/** Only OpenRouter's free tier stands in for OpenRouter (never a paid model). */
-function isCandidate(qualifiedId: string): boolean {
-  const { provider } = parseModelId(qualifiedId);
-  return provider !== "openrouter" || isOpenRouterFree(qualifiedId);
-}
-
-function orderWithinProvider(models: { id: string; model: string; contextLength?: number }[], provider: ProviderId): string[] {
-  if (provider === "openrouter") {
-    // The free router first: it routes around busy models itself.
-    const router = models.find((m) => m.model === OPENROUTER_FREE_ROUTER_ID);
-    return [...(router ? [router] : []), ...models.filter((m) => m.model !== OPENROUTER_FREE_ROUTER_ID)].map((m) => m.id);
-  }
-  // Elsewhere, prefer the most capable sibling (largest context) first.
-  return [...models].sort((a, b) => (b.contextLength ?? 0) - (a.contextLength ?? 0)).map((m) => m.id);
-}
-
 /**
- * Ordered alternatives for a failing model:
- *   1. the best healthy, untried sibling from the same provider;
- *   2. the best healthy model from each other configured provider, in
- *      preference order (a provider-wide outage shouldn't eat every attempt);
- *   3. any remaining siblings.
- * Unhealthy models (rate-limited, busy, timed out, empty, restricted) are
- * skipped — their state is temporary and they stay in the picker.
+ * Ordered alternatives for a struggling OpenRouter free model: the free
+ * router first (it routes around busy models itself), then the other free
+ * models currently listed, excluding anything tried or known-unhealthy.
  */
-async function fallbackCandidates(original: string, tried: Set<string>): Promise<string[]> {
-  const { provider } = parseModelId(original);
-  const usable = (await getAvailableModels()).filter((m) => !tried.has(m.id) && isModelUsable(m.id) && isCandidate(m.id));
-
-  const same = orderWithinProvider(usable.filter((m) => m.provider === provider), provider);
-  const others = CROSS_PROVIDER_ORDER.filter((p) => p !== provider).flatMap((p) =>
-    orderWithinProvider(usable.filter((m) => m.provider === p), p).slice(0, 1),
-  );
-
-  // Has a sibling already had its turn in this request? Then other providers go first.
-  const siblingTried = [...tried].some((id) => id !== original && parseModelId(id).provider === provider);
-  return siblingTried ? [...others, ...same] : [...same.slice(0, 1), ...others, ...same.slice(1)];
+async function openRouterFallbacks(tried: Set<string>): Promise<string[]> {
+  const free = (await getAvailableModels()).filter((m) => m.provider === "openrouter" && isOpenRouterFree(m.id));
+  const router = free.find((m) => m.model === OPENROUTER_FREE_ROUTER_ID);
+  const ordered = [...(router ? [router] : []), ...free.filter((m) => m.model !== OPENROUTER_FREE_ROUTER_ID)];
+  return ordered.map((m) => m.id).filter((id) => !tried.has(id) && isFallbackCandidate(id));
 }
-
-/** What the user reads when a switch happens or when we give up. */
-const SWITCHING_SUFFIX = " UNBOUND is switching to another available model.";
-const GIVE_UP_SUFFIX = " Please try again shortly or pick another model.";
-const NO_FALLBACK_SUFFIX = " Automatic model switching is off.";
-
-type AttemptOutcome =
-  | { kind: "finished" }
-  | {
-      kind: "retry";
-      /** Short, user-facing sentence explaining why this model was abandoned. */
-      reason: string;
-      /** What to emit if no alternative is available. */
-      surface: GenerationEvent;
-      /** True for outcomes where one more try on the same model is sensible. */
-      retrySame: boolean;
-    };
 
 type ErrorEvent = Extract<GenerationEvent, { type: "error" }>;
 
-/** Errors worth trying another model for — only ever before the first token. */
-function classifyRetryable(event: ErrorEvent): "rate_limited" | "restricted" | "busy" | null {
-  if (event.code === "rate_limited") return "rate_limited";
-  if (event.code === "restricted") return "restricted";
-  if (event.status !== undefined && event.status >= 500) return "busy";
-  // An upstream failure inside the stream with no usable status (a starved
-  // free-tier route, typically) — the model is busy; someone else can answer.
-  if (event.code === "upstream_error" && event.status === undefined && /mid-stream/.test(event.message)) return "busy";
-  return null;
-}
+/** Why an attempt is being abandoned before it produced anything. */
+type Setback = { kind: "rate_limited" | "quota" | "restricted" | "timeout" | "empty"; event: ErrorEvent };
 
 /**
- * Runs one model attempt. Yields the events callers should see; returns
- * whether the request finished or should move to another model.
- */
-async function* runAttempt(
-  options: GenerationOptions,
-  model: string,
-): AsyncGenerator<GenerationEvent, AttemptOutcome, undefined> {
-  const inner = new AbortController();
-  const onOuterAbort = () => inner.abort();
-  options.signal?.addEventListener("abort", onOuterAbort, { once: true });
-  if (options.signal?.aborted) inner.abort();
-
-  const stream = streamGeneration({ ...options, model, signal: inner.signal });
-  let produced = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const firstTokenTimeout = new Promise<{ timedOut: true }>((resolve) => {
-    timer = setTimeout(() => resolve({ timedOut: true }), FIRST_TOKEN_TIMEOUT_MS);
-  });
-  const clear = () => {
-    if (timer) clearTimeout(timer);
-    options.signal?.removeEventListener("abort", onOuterAbort);
-  };
-
-  try {
-    while (true) {
-      const step = produced
-        ? await stream.next()
-        : await Promise.race([stream.next(), firstTokenTimeout]);
-
-      if ("timedOut" in step) {
-        inner.abort();
-        void stream.return(undefined).catch(() => undefined);
-        markTimeout(model, `no first token within ${FIRST_TOKEN_TIMEOUT_MS / 1000}s`);
-        console.warn(`[fallback] ${model}: no first token within ${FIRST_TOKEN_TIMEOUT_MS / 1000}s`);
-        const message = "This model is taking too long to respond.";
-        return { kind: "retry", reason: message, surface: { type: "error", code: "timeout", message }, retrySame: false };
-      }
-
-      if (step.done) return { kind: "finished" };
-      const event = step.value;
-
-      if (event.type === "text") {
-        if (event.text.length > 0) {
-          if (!produced) clear();
-          produced = true;
-          yield event;
-        }
-        continue;
-      }
-
-      if (event.type === "done") {
-        if (!produced) {
-          console.warn(`[fallback] ${model}: empty completion`);
-          markUnavailable(model, "empty completion");
-          const message = "This model returned an empty response.";
-          return {
-            kind: "retry",
-            reason: message,
-            surface: { type: "error", code: "upstream_error", message },
-            retrySame: true,
-          };
-        }
-        markHealthy(model);
-        yield event;
-        return { kind: "finished" };
-      }
-
-      if (event.type === "error") {
-        if (options.signal?.aborted || event.code === "aborted") {
-          yield event;
-          return { kind: "finished" };
-        }
-        const retryable = produced ? null : classifyRetryable(event);
-        if (retryable === "rate_limited") markRateLimited(model, event.message, event.retryAfterMs);
-        else if (retryable === "restricted") markRestricted(model, event.message);
-        else if (retryable === "busy") markBusy(model, event.message);
-
-        if (retryable) return { kind: "retry", reason: event.message, surface: event, retrySame: false };
-        yield event;
-        return { kind: "finished" };
-      }
-
-      yield event; // fallback events from nested layers (none today)
-    }
-  } finally {
-    clear();
-  }
-}
-
-function withSuffix(event: GenerationEvent, suffix: string): GenerationEvent {
-  return event.type === "error" ? { ...event, message: event.message + suffix } : event;
-}
-
-/**
- * streamGeneration with automatic fallback.
+ * streamGeneration with resilience for OpenRouter's shared free tier.
  *
- * If the chosen model fails *before any text has streamed* — rate-limited,
- * restricted, overloaded (5xx / in-stream failure), silent for
- * FIRST_TOKEN_TIMEOUT_MS, or an empty completion — the request moves on:
- *   1. the same model once more, only for an empty completion;
- *   2. another healthy model from the same provider;
- *   3. a healthy model from another configured provider;
- * stopping after MAX_FALLBACK_ATTEMPTS attempts in total. Each switch is
- * announced with a `fallback` event so callers can record which model
- * answered. Once text has started, no retry happens. With
- * `allowFallback: false` the provider's own error is returned instead.
+ * An attempt is abandoned — and, for OpenRouter free models, retried on
+ * another free model — when, *before any text has streamed*, it is
+ * rate-limited (429), refused by policy (403), silent for
+ * FIRST_TOKEN_TIMEOUT_MS, or finishes with an empty completion. At most
+ * MAX_FALLBACK_ATTEMPTS models are tried. Each outcome updates the model's
+ * health so the picker can hint and later fallbacks can skip it; health
+ * entries expire on their own. Once text has started, no retry happens.
  */
 export async function* streamWithFallback(
   options: GenerationOptions,
 ): AsyncGenerator<GenerationEvent, void, undefined> {
-  const allowFallback = options.allowFallback !== false;
   const tried = new Set<string>();
   let current = options.model;
-  let retriedSame = false;
 
   for (let attempt = 1; ; attempt++) {
     tried.add(current);
-    const outcome = yield* runAttempt(options, current);
-    if (outcome.kind === "finished") return;
 
-    if (!allowFallback) {
-      yield withSuffix(outcome.surface, NO_FALLBACK_SUFFIX);
+    // Per-attempt abort so a first-token timeout cancels only this model.
+    const attemptController = new AbortController();
+    const abortAttempt = () => attemptController.abort();
+    options.signal?.addEventListener("abort", abortAttempt, { once: true });
+    let firstToken = false;
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      if (!firstToken) {
+        timedOut = true;
+        attemptController.abort();
+      }
+    }, FIRST_TOKEN_TIMEOUT_MS);
+
+    let setback: Setback | null = null;
+    let doneEvent: Extract<GenerationEvent, { type: "done" }> | null = null;
+
+    try {
+      for await (const event of streamGeneration({ ...options, model: current, signal: attemptController.signal })) {
+        if (event.type === "text" && event.text.length > 0) {
+          if (!firstToken) {
+            firstToken = true;
+            clearTimeout(timer);
+          }
+          yield event;
+          continue;
+        }
+        if (event.type === "error") {
+          if (!firstToken && event.code === "rate_limited") setback = { kind: "rate_limited", event };
+          else if (!firstToken && event.code === "quota_exhausted") setback = { kind: "quota", event };
+          else if (!firstToken && event.code === "model_restricted") setback = { kind: "restricted", event };
+          else if (event.code === "aborted" && timedOut && !options.signal?.aborted) {
+            setback = {
+              kind: "timeout",
+              event: {
+                type: "error",
+                code: "upstream_error",
+                message: `No response from the model within ${FIRST_TOKEN_TIMEOUT_MS / 1000} seconds.`,
+              },
+            };
+          } else yield event;
+          break;
+        }
+        if (event.type === "done") {
+          if (!firstToken) {
+            setback = {
+              kind: "empty",
+              event: { type: "error", code: "upstream_error", message: "The model returned an empty response." },
+            };
+          } else doneEvent = event;
+          break;
+        }
+        yield event;
+      }
+    } finally {
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", abortAttempt);
+    }
+
+    if (doneEvent) {
+      markHealthy(current);
+      yield doneEvent;
       return;
     }
-    if (attempt >= MAX_FALLBACK_ATTEMPTS || options.signal?.aborted) {
-      yield withSuffix(outcome.surface, GIVE_UP_SUFFIX);
-      return;
+    if (!setback) return; // error already yielded, or user cancelled
+
+    // Record what happened to this model.
+    switch (setback.kind) {
+      case "rate_limited":
+        markRateLimited(current, "Rate limited a moment ago");
+        break;
+      case "quota":
+        // Account-wide: every model of this provider is affected, so there is
+        // nothing to fall back to within it. Surface the message immediately.
+        markProviderQuotaExhausted(parseModelId(current).provider, "Daily free quota used up");
+        yield setback.event;
+        return;
+      case "restricted":
+        break; // markRestricted already ran inside the adapter
+      case "timeout":
+        markSoftFailure(current, "No response within 30 s");
+        break;
+      case "empty":
+        markSoftFailure(current, "Returned an empty response");
+        break;
     }
 
-    // Step 1: one more try on the same model when that's sensible.
-    if (outcome.retrySame && !retriedSame) {
-      retriedSame = true;
-      console.warn(`[fallback] ${current}: ${outcome.reason} — retrying the same model once (attempt ${attempt + 1}/${MAX_FALLBACK_ATTEMPTS})`);
-      continue;
-    }
-
-    // Steps 2–3: same provider, then other providers.
-    const next = (await fallbackCandidates(options.model, tried))[0];
+    const canFallback = isOpenRouterFree(current) && attempt < MAX_FALLBACK_ATTEMPTS && !options.signal?.aborted;
+    const next = canFallback ? (await openRouterFallbacks(tried))[0] : undefined;
     if (!next) {
-      yield withSuffix(outcome.surface, GIVE_UP_SUFFIX);
+      yield setback.event;
       return;
     }
 
-    console.warn(`[fallback] ${current}: ${outcome.reason} — switching to ${next} (attempt ${attempt + 1}/${MAX_FALLBACK_ATTEMPTS})`);
-    yield { type: "fallback", from: current, to: next, reason: outcome.reason + SWITCHING_SUFFIX };
+    console.warn(`[fallback] ${current}: ${setback.kind}; retrying with ${next} (attempt ${attempt + 1}/${MAX_FALLBACK_ATTEMPTS})`);
+    yield { type: "fallback", from: current, to: next, reason: setback.event.message };
     current = next;
   }
 }
