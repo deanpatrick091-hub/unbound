@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 
-import type { ModelOption, ProviderStatus } from "@/lib/ai/types";
+import type { ModelOption } from "@/lib/ai/types";
 
 export interface ConversationSummary {
   id: string;
@@ -28,8 +28,6 @@ interface ShellContextValue {
   user: ShellUser;
   /** Models the server can serve right now (providers with keys configured). */
   models: ModelOption[];
-  /** Every provider UNBOUND knows, with whether it's usable right now. */
-  providers: ProviderStatus[];
   conversations: ConversationSummary[];
   councilSessions: CouncilSummary[];
   refreshConversations: () => Promise<void>;
@@ -48,7 +46,6 @@ const ShellContext = createContext<ShellContextValue | null>(null);
 interface ShellProviderProps {
   user: ShellUser;
   models: ModelOption[];
-  providers: ProviderStatus[];
   initialConversations: ConversationSummary[];
   initialCouncilSessions: CouncilSummary[];
   children: ReactNode;
@@ -57,7 +54,6 @@ interface ShellProviderProps {
 export function ShellProvider({
   user,
   models,
-  providers,
   initialConversations,
   initialCouncilSessions,
   children,
@@ -108,7 +104,6 @@ export function ShellProvider({
     () => ({
       user,
       models,
-      providers,
       conversations,
       councilSessions,
       refreshConversations,
@@ -123,7 +118,6 @@ export function ShellProvider({
     [
       user,
       models,
-      providers,
       conversations,
       councilSessions,
       refreshConversations,

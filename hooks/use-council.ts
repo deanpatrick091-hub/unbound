@@ -12,7 +12,6 @@ import {
   type CouncilState,
 } from "@/lib/council/state";
 import type { CouncilRole, CouncilStreamEvent } from "@/lib/council/types";
-import { getAutoFallback } from "@/lib/prefs/auto-fallback";
 import { readErrorBody, readNdjson } from "@/lib/stream/ndjson";
 
 export type { CouncilMemberState, CouncilMembers, CouncilState };
@@ -85,7 +84,7 @@ export function useCouncil(options: UseCouncilOptions = {}) {
         const response = await fetch("/api/council", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: trimmed, model, autoFallback: getAutoFallback() }),
+          body: JSON.stringify({ question: trimmed, model }),
           signal: controller.signal,
         });
 

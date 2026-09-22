@@ -83,7 +83,6 @@ export async function POST(request: NextRequest): Promise<Response> {
   const parsed = parseBuildRequest(body);
   if (!parsed.ok) return errorResponse(400, "invalid_request", parsed.message);
   const { instruction, files, history } = parsed.data;
-  const allowFallback = !(isRecord(body) && body.autoFallback === false);
 
   const model = resolveModel(parsed.data.model, await getDefaultModelFor(supabase, user.id));
   const { provider } = parseModelId(model);
@@ -150,7 +149,6 @@ export async function POST(request: NextRequest): Promise<Response> {
           signal: abort.signal,
           temperature: 0.5,
           maxTokens: 16_000,
-          allowFallback,
         })) {
           if (event.type === "text") {
             produced += event.text.length;

@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { describeModel } from "@/lib/ai/models";
 import type { BuildRequestBody, BuildStreamEvent, SiteFileName, SiteFiles } from "@/lib/build/types";
 import type { ChatErrorCode, ChatMessage } from "@/lib/chat/types";
-import { getAutoFallback } from "@/lib/prefs/auto-fallback";
 import { createId, readErrorBody, readNdjson } from "@/lib/stream/ndjson";
 
 export type BuilderStatus = "idle" | "submitting" | "streaming" | "error";
@@ -146,7 +145,7 @@ export function useBuilder(options: { userId: string; model: string }) {
         const response = await fetch("/api/build", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...body, autoFallback: getAutoFallback() }),
+          body: JSON.stringify(body),
           signal: controller.signal,
         });
 
@@ -182,7 +181,7 @@ export function useBuilder(options: { userId: string; model: string }) {
             case "model_switched": {
               const from = describeModel(event.from);
               const to = describeModel(event.to);
-              const note = `${from.providerLabel} · ${from.label}: ${event.reason} Built by ${to.providerLabel} · ${to.label}.`;
+              const note = `${from.label} was rate-limited — built by ${to.providerLabel} · ${to.label} instead.`;
               commitMessages((prev) => prev.map((m) => (m.id === assistant.id ? { ...m, note } : m)));
               break;
             }
