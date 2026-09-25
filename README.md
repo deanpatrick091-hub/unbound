@@ -42,7 +42,6 @@ Next.js 16 · React 19 · TypeScript · Tailwind CSS v4 · shadcn/ui · Lucide �
 | `CEREBRAS_API_KEY` | No | Enables Cerebras (OpenAI-compatible). Models discovered live from `/v1/models`. |
 | `OPENROUTER_API_KEY` | No | Enables OpenRouter (curated `:free` models in `lib/ai/models.ts`). |
 | `OPENROUTER_SITE_URL`, `OPENROUTER_APP_NAME` | No | Optional OpenRouter attribution headers. |
-| `HF_TOKEN` | No | Enables Hugging Face Inference Providers (router). |
 | `OLLAMA_BASE_URL` | No | Enables Ollama, e.g. `http://localhost:11434`; models discovered from `/api/tags`. |
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL (public). |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes | Supabase publishable key (public by design; RLS protects data). |
@@ -53,16 +52,16 @@ model ids and labels, never keys. The Supabase **service-role** key is never use
 ## AI providers
 
 `lib/ai/` is the provider layer. Model ids are `provider:model` (bare ids are treated as
-Gemini for backward compatibility). Gemini uses its native SDK; Groq, OpenRouter, Hugging
-Face and Ollama share one OpenAI-compatible streaming client. The chat composer and Settings
+Gemini for backward compatibility). Gemini uses its native SDK; Groq, Cerebras, OpenRouter
+and Ollama share one OpenAI-compatible streaming client. The chat composer and Settings
 show only providers whose keys are configured.
 
 Model lists for **Groq, Cerebras, OpenRouter and Ollama are discovered live** from each
 provider's model API (filtered to active, text-in/text-out chat models; OpenRouter to
 free-priced models plus the `openrouter/free` router) and cached for five minutes, so no ids
-are hard-coded for them. Gemini and Hugging Face use the curated `MODEL_CATALOG` in
-`lib/ai/models.ts`. Provider errors (400/401/402/404/429/5xx) are surfaced to the user with
-the provider's own reason attached.
+are hard-coded for them. Gemini uses the curated `MODEL_CATALOG` in `lib/ai/models.ts`.
+Provider errors (400/401/402/404/429/5xx) are surfaced to the user with the provider's own
+reason attached.
 
 **Resilience** (`lib/ai/generate.ts`, `lib/ai/health.ts`): before a model has produced any
 text, a 429, a policy 403, an empty completion, or 30 s of silence abandons that attempt;

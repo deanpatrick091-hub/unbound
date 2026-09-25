@@ -8,11 +8,11 @@ import type { ModelOption, ProviderId } from "@/lib/ai/types";
 /**
  * Builds the list of models the current server can actually serve.
  *
- * Groq, OpenRouter and Ollama are discovered live from the providers' own
- * model endpoints and filtered structurally (modalities, pricing, activity),
- * so nothing here depends on remembering model ids. Gemini and Hugging Face
- * use the curated catalog. Results are cached in-process briefly so the app
- * layout stays fast; a failed discovery falls back to the last good list.
+ * Groq, Cerebras, OpenRouter and Ollama are discovered live from the providers'
+ * own model endpoints and filtered structurally (modalities, pricing, activity),
+ * so nothing here depends on remembering model ids. Gemini uses the curated
+ * catalog. Results are cached in-process briefly so the app layout stays fast;
+ * a failed discovery falls back to the last good list.
  */
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -53,7 +53,7 @@ export function invalidateModelCache(provider?: ProviderId): void {
 
 async function modelsFor(provider: ProviderId): Promise<ModelOption[]> {
   const curated = MODEL_CATALOG.filter((m) => m.provider === provider);
-  if (provider === "gemini" || provider === "huggingface") return curated;
+  if (provider === "gemini") return curated;
 
   const cached = cache.get(provider);
   if (cached && cached.expires > Date.now()) return cached.models;

@@ -3,16 +3,15 @@
  */
 import type { ChatErrorCode, ChatRole, TokenUsage } from "@/lib/chat/types";
 
-export type ProviderId = "gemini" | "groq" | "cerebras" | "openrouter" | "huggingface" | "ollama";
+export type ProviderId = "gemini" | "groq" | "cerebras" | "openrouter" | "ollama";
 
-export const PROVIDER_IDS: readonly ProviderId[] = ["gemini", "groq", "cerebras", "openrouter", "huggingface", "ollama"];
+export const PROVIDER_IDS: readonly ProviderId[] = ["gemini", "groq", "cerebras", "openrouter", "ollama"];
 
 export const PROVIDER_LABELS: Record<ProviderId, string> = {
   gemini: "Google Gemini",
   groq: "Groq",
   cerebras: "Cerebras",
   openrouter: "OpenRouter",
-  huggingface: "Hugging Face",
   ollama: "Ollama (local)",
 };
 

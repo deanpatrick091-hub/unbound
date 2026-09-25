@@ -65,13 +65,6 @@ export function getProviderConfig(provider: ProviderId): ProviderConfig | null {
       };
     }
 
-    case "huggingface": {
-      const apiKey = env("HF_TOKEN");
-      return apiKey
-        ? { kind: "openai-compatible", baseUrl: "https://router.huggingface.co/v1", apiKey, supportsStreamUsage: true }
-        : null;
-    }
-
     case "ollama": {
       const base = env("OLLAMA_BASE_URL");
       if (!base) return null;
@@ -99,7 +92,6 @@ export function providerNotConfiguredMessage(provider: ProviderId): string {
     groq: "GROQ_API_KEY",
     cerebras: "CEREBRAS_API_KEY",
     openrouter: "OPENROUTER_API_KEY",
-    huggingface: "HF_TOKEN",
     ollama: "OLLAMA_BASE_URL",
   };
   return `${PROVIDER_LABELS[provider]} isn't configured on the server. Set ${envVar[provider]}.`;

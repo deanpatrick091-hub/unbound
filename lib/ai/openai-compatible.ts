@@ -6,7 +6,7 @@ import type { ChatErrorCode, TokenUsage } from "@/lib/chat/types";
 
 /**
  * Streaming client for the OpenAI-compatible chat completions protocol, which
- * Groq, OpenRouter, Hugging Face's router and Ollama all implement. Yields the
+ * Groq, Cerebras, OpenRouter and Ollama all implement. Yields the
  * same GenerationEvents as the Gemini adapter so callers don't care which
  * provider answered.
  */
