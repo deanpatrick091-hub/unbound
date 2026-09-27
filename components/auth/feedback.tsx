@@ -1,9 +1,9 @@
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 
-import type { AuthActionState } from "@/app/(auth)/actions";
+import type { ActionState } from "@/app/(app)/settings/actions";
 
 interface FeedbackProps {
-  state: AuthActionState;
+  state: ActionState;
   id?: string;
 }
 

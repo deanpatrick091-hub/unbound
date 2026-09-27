@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 
 import { CouncilScreen } from "@/components/council/council-screen";
 import { getSession } from "@/lib/auth/session";
@@ -22,7 +22,7 @@ export default async function CouncilSessionPage({ params }: PageProps<"/council
   if (!isUuid(id)) notFound();
 
   const { supabase, user } = await getSession();
-  if (!user) redirect("/login");
+  if (!user) throw new Error("Workspace session unavailable.");
 
   const result = await getCouncilSession(supabase, id);
   if (!result) notFound();

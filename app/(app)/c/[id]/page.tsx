@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 
 import { ChatScreen } from "@/components/chat/chat-screen";
 import { getSession } from "@/lib/auth/session";
@@ -22,7 +22,7 @@ export default async function ConversationPage({ params }: PageProps<"/c/[id]">)
   if (!isUuid(id)) notFound();
 
   const { supabase, user } = await getSession();
-  if (!user) redirect("/login");
+  if (!user) throw new Error("Workspace session unavailable.");
 
   // RLS: another user's conversation id simply returns null here.
   const conversation = await getConversation(supabase, id);

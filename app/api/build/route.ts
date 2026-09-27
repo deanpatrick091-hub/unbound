@@ -1,3 +1,4 @@
+import { getAvailableModel } from "@/lib/ai/discovery";
 import type { NextRequest } from "next/server";
 
 import { streamWithFallback, type GenerationTurn } from "@/lib/ai/generate";
@@ -90,6 +91,10 @@ export async function POST(request: NextRequest): Promise<Response> {
     return errorResponse(400, "not_configured", providerNotConfiguredMessage(provider));
   }
 
+  if (!(await getAvailableModel(model))) {
+    return errorResponse(400, "invalid_request", "This model is not in the current free model library. Choose another model.");
+  }
+
   const limit = await consumeRequest(supabase, "build");
   if (!limit.allowed) return limitResponse(limit);
 
@@ -146,7 +151,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           model,
           systemInstruction: BUILD_SYSTEM_INSTRUCTION,
           turns,
-          signal: abort.signal,
+          signal: AbortSignal.any([abort.signal, request.signal]),
           temperature: 0.5,
           maxTokens: 16_000,
         })) {

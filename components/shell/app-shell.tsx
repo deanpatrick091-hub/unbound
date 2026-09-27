@@ -8,7 +8,8 @@ import { PanelLeft, Plus, X } from "lucide-react";
 
 import { Sidebar } from "@/components/shell/sidebar";
 import { useShell } from "@/components/shell/shell-context";
-import { Wordmark } from "@/components/shell/wordmark";
+import { AppearanceButton, AppearanceProvider, WallpaperLayer } from "@/components/appearance/appearance";
+import { ThemeToggle } from "@/components/appearance/theme-toggle";
 
 /**
  * Two-column desktop layout with a fixed sidebar; on mobile the sidebar
@@ -17,7 +18,7 @@ import { Wordmark } from "@/components/shell/wordmark";
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { mobileNavOpen, setMobileNavOpen } = useShell();
+  const { user, mobileNavOpen, setMobileNavOpen } = useShell();
 
   // Close the drawer after any navigation.
   useEffect(() => {
@@ -25,13 +26,17 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [pathname, setMobileNavOpen]);
 
   return (
-    <div className="flex h-dvh bg-background">
-      <aside className="hidden w-[272px] shrink-0 border-r bg-surface/60 lg:block">
+    <AppearanceProvider userId={user.id}>
+    <div className="workspace-shell flex h-dvh">
+      <aside className="workspace-sidebar glass-panel hidden w-[256px] shrink-0 lg:block">
         <Sidebar />
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-12 shrink-0 items-center justify-between border-b px-2 lg:hidden">
+      <div className="workspace-main glass-panel flex min-w-0 flex-1 flex-col">
+        <WallpaperLayer />
+        <header className="workspace-toolbar flex h-16 shrink-0 items-center justify-between border-b px-3 sm:px-5">
+          <div className="flex items-center gap-3">
+          <div className="lg:hidden">
           <Dialog.Root open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <Dialog.Trigger asChild>
               <button
@@ -46,7 +51,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 animate-fade-in" />
               <Dialog.Content
                 aria-describedby={undefined}
-                className="fixed inset-y-0 left-0 z-50 w-[min(86vw,320px)] border-r bg-surface shadow-[8px_0_40px_-12px_rgba(0,0,0,0.7)] outline-none animate-rise-in"
+                className="glass-dialog fixed inset-y-3 left-3 z-50 w-[min(86vw,320px)] rounded-3xl p-2 outline-none animate-rise-in"
               >
                 <Dialog.Title className="sr-only">Navigation</Dialog.Title>
                 <Dialog.Close asChild>
@@ -62,9 +67,12 @@ export function AppShell({ children }: { children: ReactNode }) {
               </Dialog.Content>
             </Dialog.Portal>
           </Dialog.Root>
-
-          <Wordmark />
-
+          </div>
+          <span className="text-sm font-medium">{pathname.startsWith("/build") ? "Website studio" : pathname.startsWith("/council") ? "Council" : pathname === "/settings" ? "Your settings" : pathname === "/models" ? "Model library" : pathname === "/image-gen" ? "Image studio" : "Your workspace"}</span>
+          </div>
+          <div className="flex items-center gap-2">
+          <AppearanceButton />
+          <ThemeToggle />
           <Link
             href="/"
             aria-label="New chat"
@@ -72,10 +80,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             <Plus className="size-5" />
           </Link>
+          </div>
         </header>
 
         <main className="flex min-h-0 flex-1 flex-col">{children}</main>
       </div>
     </div>
+    </AppearanceProvider>
   );
 }

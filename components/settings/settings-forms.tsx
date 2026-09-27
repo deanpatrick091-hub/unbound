@@ -2,14 +2,14 @@
 
 import { useActionState, useId } from "react";
 
-import { updatePassword, updatePreferences, updateProfile, type AuthActionState } from "@/app/(auth)/actions";
+import { updatePreferences, updateProfile, type ActionState } from "@/app/(app)/settings/actions";
 import { Feedback } from "@/components/auth/feedback";
 import { Field } from "@/components/auth/field";
 import { SubmitButton } from "@/components/auth/submit-button";
 import { describeModel, groupByProvider, qualifyModelId } from "@/lib/ai/models";
 import type { ModelOption } from "@/lib/ai/types";
 
-const EMPTY: AuthActionState = {};
+const EMPTY: ActionState = {};
 
 export function ProfileForm({ displayName }: { displayName: string | null }) {
   const [state, action, pending] = useActionState(updateProfile, EMPTY);
@@ -83,38 +83,6 @@ export function PreferencesForm({
       <Feedback state={state} />
       <SubmitButton pending={pending} pendingLabel="Saving…" className="w-auto px-5" variant="secondary">
         Save
-      </SubmitButton>
-    </form>
-  );
-}
-
-export function PasswordForm() {
-  const [state, action, pending] = useActionState(updatePassword, EMPTY);
-  return (
-    <form action={action} className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field
-          label="New password"
-          name="password"
-          type="password"
-          autoComplete="new-password"
-          required
-          minLength={8}
-          disabled={pending}
-        />
-        <Field
-          label="Confirm"
-          name="confirm"
-          type="password"
-          autoComplete="new-password"
-          required
-          minLength={8}
-          disabled={pending}
-        />
-      </div>
-      <Feedback state={state} />
-      <SubmitButton pending={pending} pendingLabel="Updating…" className="w-auto px-5" variant="secondary">
-        Update password
       </SubmitButton>
     </form>
   );

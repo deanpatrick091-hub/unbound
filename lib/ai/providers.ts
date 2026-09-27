@@ -1,6 +1,7 @@
 import "server-only";
 
 import { PROVIDER_IDS, PROVIDER_LABELS, type ProviderId } from "@/lib/ai/types";
+import { freeTierConfirmed } from "@/lib/ai/free-policy";
 
 /**
  * Server-only provider configuration. API keys are read here and only here;
@@ -15,6 +16,7 @@ export interface OpenAICompatibleConfig {
   extraHeaders?: Record<string, string>;
   /** Whether the provider honours `stream_options.include_usage`. */
   supportsStreamUsage: boolean;
+  zeroPriceOnly?: boolean;
 }
 
 export interface GeminiConfig {
@@ -36,16 +38,30 @@ export function getProviderConfig(provider: ProviderId): ProviderConfig | null {
 
     case "groq": {
       const apiKey = env("GROQ_API_KEY");
-      return apiKey
+      return apiKey && freeTierConfirmed("groq")
         ? { kind: "openai-compatible", baseUrl: "https://api.groq.com/openai/v1", apiKey, supportsStreamUsage: true }
         : null;
     }
 
-    case "cerebras": {
-      const apiKey = env("CEREBRAS_API_KEY");
-      return apiKey
-        ? { kind: "openai-compatible", baseUrl: "https://api.cerebras.ai/v1", apiKey, supportsStreamUsage: true }
-        : null;
+    case "mistral": {
+      const apiKey = env("MISTRAL_API_KEY");
+      return apiKey && freeTierConfirmed("mistral") ? { kind: "openai-compatible", baseUrl: "https://api.mistral.ai/v1", apiKey, supportsStreamUsage: false } : null;
+    }
+    case "huggingface": {
+      const apiKey = env("HF_TOKEN");
+      return apiKey && freeTierConfirmed("huggingface") ? { kind: "openai-compatible", baseUrl: "https://router.huggingface.co/v1", apiKey, supportsStreamUsage: true } : null;
+    }
+    case "zai": {
+      const apiKey = env("ZAI_API_KEY");
+      return apiKey && freeTierConfirmed("zai") ? { kind: "openai-compatible", baseUrl: "https://api.z.ai/api/paas/v4", apiKey, supportsStreamUsage: false } : null;
+    }
+    case "cerebras": return null; // Expiring trial credits do not qualify.
+
+    case "cloudflare": {
+      const apiKey = env("CLOUDFLARE_API_TOKEN");
+      const account = env("CLOUDFLARE_ACCOUNT_ID");
+      if (!apiKey || !account || !/^[a-f0-9]{32}$/i.test(account) || !freeTierConfirmed("cloudflare")) return null;
+      return { kind: "openai-compatible", baseUrl: "https://api.cloudflare.com/client/v4/accounts/" + account + "/ai/v1", apiKey, supportsStreamUsage: false };
     }
 
     case "openrouter": {
@@ -62,14 +78,8 @@ export function getProviderConfig(provider: ProviderId): ProviderConfig | null {
         apiKey,
         extraHeaders,
         supportsStreamUsage: true,
+        zeroPriceOnly: true,
       };
-    }
-
-    case "huggingface": {
-      const apiKey = env("HF_TOKEN");
-      return apiKey
-        ? { kind: "openai-compatible", baseUrl: "https://router.huggingface.co/v1", apiKey, supportsStreamUsage: true }
-        : null;
     }
 
     case "ollama": {
@@ -94,12 +104,20 @@ export function getEnabledProviders(): ProviderId[] {
 }
 
 export function providerNotConfiguredMessage(provider: ProviderId): string {
+  if (provider === "cerebras") return "Cerebras is excluded because its free trial expires. Choose a free model from the library.";
+  if ((provider === "groq" || provider === "cloudflare" || provider === "mistral" || provider === "huggingface" || provider === "zai") && !freeTierConfirmed(provider)) {
+    return PROVIDER_LABELS[provider] + " is paused until the site owner verifies its free account tier. Choose another connected model.";
+  }
+
   const envVar: Record<ProviderId, string> = {
     gemini: "GEMINI_API_KEY",
     groq: "GROQ_API_KEY",
     cerebras: "CEREBRAS_API_KEY",
     openrouter: "OPENROUTER_API_KEY",
+    cloudflare: "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID",
+    mistral: "MISTRAL_API_KEY",
     huggingface: "HF_TOKEN",
+    zai: "ZAI_API_KEY",
     ollama: "OLLAMA_BASE_URL",
   };
   return `${PROVIDER_LABELS[provider]} isn't configured on the server. Set ${envVar[provider]}.`;

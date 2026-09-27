@@ -1,11 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Hammer, Image as ImageIcon, MessageSquare, Plus, Settings, Users } from "lucide-react";
+import { Boxes, Hammer, Image as ImageIcon, MessageSquare, Plus, Settings, Users } from "lucide-react";
 
-import { SignOutButton } from "@/components/auth/sign-out-button";
 import { ConversationItem } from "@/components/shell/conversation-item";
 import { CouncilItem } from "@/components/shell/council-item";
 import { useShell } from "@/components/shell/shell-context";
@@ -19,7 +18,7 @@ interface SidebarProps {
 
 export function Sidebar({ onNavigate }: SidebarProps) {
   const pathname = usePathname();
-  const { user, conversations, councilSessions } = useShell();
+  const { user, models, conversations, councilSessions } = useShell();
 
   const area: "chat" | "council" | "image" | "build" = pathname.startsWith("/council")
     ? "council"
@@ -45,8 +44,9 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 gap-1 px-3 pb-3">
-        <NavTile href="/" icon={Plus} label="New chat" active={area === "chat"} onClick={onNavigate} />
+      <div className="mt-5 grid grid-cols-1 gap-1.5 px-3 pb-3">
+        <NavTile href="/" icon={Plus} label="New chat" active={pathname === "/" || pathname.startsWith("/c/")} onClick={onNavigate} />
+        <NavTile href="/models" icon={Boxes} label={"Models Â· " + models.length} active={pathname === "/models"} onClick={onNavigate} />
         <NavTile href="/council" icon={Users} label="Council" active={area === "council"} onClick={onNavigate} />
         <NavTile href="/image-gen" icon={ImageIcon} label="Image Gen" active={area === "image"} onClick={onNavigate} />
         <NavTile href="/build" icon={Hammer} label="Build" active={area === "build"} onClick={onNavigate} />
@@ -54,7 +54,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
 
       {area === "image" ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
-          <p className="text-xs text-subtle">Compare Nano Banana image models side by side.</p>
+          <p className="text-sm text-subtle">Bring an idea to life with image generation.</p>
         </div>
       ) : area === "build" ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
@@ -124,7 +124,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           >
             <Settings className="size-4" />
           </Link>
-          <SignOutButton iconOnly />
         </div>
       </div>
     </nav>
@@ -149,7 +148,7 @@ function NavTile({
       href={href}
       onClick={onClick}
       className={cn(
-        "flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "nav-tile flex items-center gap-3 border px-3 py-2 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active
           ? "border-border-strong bg-raised text-foreground"
           : "border-transparent text-muted-foreground hover:border-border hover:bg-surface hover:text-foreground",

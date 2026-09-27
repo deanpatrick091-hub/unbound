@@ -21,8 +21,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
+      suppressHydrationWarning
+      data-theme="dark"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: "try{document.documentElement.dataset.theme=localStorage.getItem('unbound:theme')==='light'?'light':'dark'}catch(e){}" }} />
+      </head>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

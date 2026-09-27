@@ -1,0 +1,145 @@
+{
+  "checkedAt": "2026-09-26T18:34:11.204Z",
+  "policy": "Only configured providers passing the free policy; OpenRouter requests have a zero-price ceiling. No fallback during tests.",
+  "results": [
+    {
+      "model": "openrouter:openrouter/free",
+      "status": "passed",
+      "durationMs": 3793
+    },
+    {
+      "model": "openrouter:cohere/north-mini-code:free",
+      "status": "passed",
+      "durationMs": 6670
+    },
+    {
+      "model": "openrouter:dots-studio/dots-3-note-preview:free",
+      "status": "passed",
+      "durationMs": 3000
+    },
+    {
+      "model": "openrouter:inclusionai/ling-3.0-flash-fin:free",
+      "status": "passed",
+      "durationMs": 867
+    },
+    {
+      "model": "openrouter:inclusionai/ling-3.0-flash-sante:free",
+      "status": "passed",
+      "durationMs": 2492
+    },
+    {
+      "model": "openrouter:liquid/lfm-2.5-2.6b:free",
+      "status": "passed",
+      "durationMs": 2617
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3-super-120b-a12b:free",
+      "status": "passed",
+      "durationMs": 2275
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
+      "status": "passed",
+      "durationMs": 3525
+    },
+    {
+      "model": "openrouter:stealth/space-bunny-alpha",
+      "status": "passed",
+      "durationMs": 1542
+    },
+    {
+      "model": "openrouter:thinkingmachines/inkling:free",
+      "status": "model_restricted",
+      "durationMs": 1804,
+      "reason": "OpenRouter doesn't allow thinkingmachines/inkling:free for this app (thinkingmachines/inkling:free is only available on agentic harnesses. Try plugging it into a coding agent or productivity app listed on). It has been hidden from the picker."
+    },
+    {
+      "model": "openrouter:thinkingmachines/inkling-small:free",
+      "status": "model_restricted",
+      "durationMs": 5548,
+      "reason": "OpenRouter doesn't allow thinkingmachines/inkling-small:free for this app (thinkingmachines/inkling-small:free is only available on agentic harnesses. Try plugging it into a coding agent or productivity app listed on). It has been hidden from the picker."
+    },
+    {
+      "model": "openrouter:google/gemma-4-26b-a4b-it:free",
+      "status": "rate_limited",
+      "durationMs": 236,
+      "reason": "OpenRouter is rate-limiting google/gemma-4-26b-a4b-it:free (google/gemma-4-26b-a4b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits:). Wait a moment or pick another model.",
+      "previousAttempt": {
+        "status": "network_error",
+        "reason": "Could not reach OpenRouter. Please try again."
+      }
+    },
+    {
+      "model": "openrouter:google/gemma-4-31b-it:free",
+      "status": "passed",
+      "durationMs": 786,
+      "previousAttempt": {
+        "status": "rate_limited",
+        "reason": "OpenRouter is rate-limiting google/gemma-4-31b-it:free (google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits:). Wait a moment or pick another model."
+      }
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+      "status": "passed",
+      "durationMs": 5495,
+      "previousAttempt": {
+        "status": "upstream_error",
+        "reason": "OpenRouter is temporarily unavailable (Upstream error from Nvidia: ResourceExhausted: Worker local total request limit reached (16/16)). Please try again."
+      }
+    },
+    {
+      "model": "openrouter:nvidia/nemotron-3.5-lightning:free",
+      "status": "timeout",
+      "durationMs": 30003,
+      "reason": "The request was cancelled.",
+      "previousAttempt": {
+        "status": "aborted",
+        "reason": "The request was cancelled."
+      }
+    },
+    {
+      "model": "openrouter:poolside/laguna-s-2.1:free",
+      "status": "passed",
+      "durationMs": 3056,
+      "previousAttempt": {
+        "status": "rate_limited",
+        "reason": "OpenRouter is rate-limiting poolside/laguna-s-2.1:free (poolside/laguna-s-2.1:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits:). Wait a moment or pick another model."
+      }
+    },
+    {
+      "model": "openrouter:poolside/laguna-xs-2.1:free",
+      "status": "rate_limited",
+      "durationMs": 3072,
+      "reason": "OpenRouter is rate-limiting poolside/laguna-xs-2.1:free (poolside/laguna-xs-2.1:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits:). Wait a moment or pick another model.",
+      "previousAttempt": {
+        "status": "rate_limited",
+        "reason": "OpenRouter is rate-limiting poolside/laguna-xs-2.1:free (poolside/laguna-xs-2.1:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits:). Wait a moment or pick another model."
+      }
+    },
+    {
+      "model": "openrouter:qwen/qwen3.8-27b:free",
+      "status": "rate_limited",
+      "durationMs": 5186,
+      "reason": "OpenRouter is rate-limiting qwen/qwen3.8-27b:free (qwen/qwen3.8-27b:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits:). Wait a moment or pick another model.",
+      "previousAttempt": {
+        "status": "rate_limited",
+        "reason": "OpenRouter is rate-limiting qwen/qwen3.8-27b:free (qwen/qwen3.8-27b:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits:). Wait a moment or pick another model."
+      }
+    },
+    {
+      "model": "gemini:gemma-4-26b-a4b-it",
+      "status": "passed",
+      "durationMs": 10163
+    },
+    {
+      "model": "gemini:gemma-4-31b-it",
+      "status": "upstream_error",
+      "durationMs": 247,
+      "reason": "The AI service is temporarily unavailable. Please try again.",
+      "previousAttempt": {
+        "status": "upstream_error",
+        "reason": "The AI service is temporarily unavailable. Please try again."
+      }
+    }
+  ]
+}

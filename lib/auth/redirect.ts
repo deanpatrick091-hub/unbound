@@ -4,8 +4,12 @@
  */
 export function safeNextPath(value: string | null | undefined): string {
   if (!value) return "/";
-  if (!value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) {
+  if (!value.startsWith("/") || value.startsWith("//") || /[\\\u0000-\u0020\u007f]/.test(value)) {
     return "/";
   }
-  return value;
+  try {
+    const url = new URL(value, "https://unbound.invalid");
+    if (url.origin !== "https://unbound.invalid") return "/";
+    return url.pathname + url.search + url.hash;
+  } catch { return "/"; }
 }

@@ -1,194 +1,75 @@
 import "server-only";
-
-import { getAvailableModels, invalidateModelCache, OPENROUTER_FREE_ROUTER_ID } from "@/lib/ai/discovery";
-import {
-  isFallbackCandidate,
-  markHealthy,
-  markProviderQuotaExhausted,
-  markRateLimited,
-  markRestricted,
-  markSoftFailure,
-} from "@/lib/ai/health";
-import { parseModelId } from "@/lib/ai/models";
+import { getAvailableModel, getAvailableModels, invalidateModelCache, OPENROUTER_FREE_ROUTER_ID } from "@/lib/ai/discovery";
+import { isFallbackCandidate, markHealthy, markProviderQuotaExhausted, markRateLimited, markRestricted, markSoftFailure } from "@/lib/ai/health";
+import { parseModelId, qualifyModelId } from "@/lib/ai/models";
 import { streamOpenAICompatible } from "@/lib/ai/openai-compatible";
 import { getProviderConfig, providerNotConfiguredMessage } from "@/lib/ai/providers";
 import { PROVIDER_LABELS, type GenerationEvent, type GenerationOptions } from "@/lib/ai/types";
 import { streamGemini } from "@/lib/gemini/stream";
 
-/**
- * Provider-agnostic entry point for a single model. Routes a qualified model
- * id to the right adapter; every adapter yields the same GenerationEvents.
- */
-export async function* streamGeneration(
-  options: GenerationOptions,
-): AsyncGenerator<GenerationEvent, void, undefined> {
+export async function* streamGeneration(options: GenerationOptions): AsyncGenerator<GenerationEvent> {
   const { provider, model } = parseModelId(options.model);
   const config = getProviderConfig(provider);
-
-  if (!config) {
-    yield { type: "error", code: "not_configured", message: providerNotConfiguredMessage(provider) };
-    return;
-  }
-
-  if (config.kind === "gemini") {
-    yield* streamGemini({ ...options, model });
-    return;
-  }
-
+  if (!config) { yield { type: "error", code: "not_configured", message: providerNotConfiguredMessage(provider) }; return; }
+  const allowed = await getAvailableModel(options.model);
+  if (!allowed) { yield { type: "error", code: "invalid_request", message: "Choose a model from the current free model library." }; return; }
+  const bounded = { ...options, maxTokens: Math.min(options.maxTokens ?? 4096, allowed.maxOutputTokens ?? 16_384, 16_384) };
+  if (config.kind === "gemini") { yield* streamGemini({ ...bounded, model }); return; }
   yield* streamOpenAICompatible(config, PROVIDER_LABELS[provider], model, {
-    ...options,
-    // A 404 means the live catalogue has moved on; drop the cached list so
-    // the picker stops offering the model.
-    onModelUnavailable: () => invalidateModelCache(provider),
-    // A policy 403 hides the model until the health entry expires.
-    onModelRestricted: (reason) => markRestricted(options.model, reason),
+    ...bounded,
+    onModelUnavailable: () => { markRestricted(options.model, "No longer offered by this provider"); invalidateModelCache(provider); },
+    onModelRestricted: reason => markRestricted(options.model, reason),
   });
 }
 
-/** Total attempts per request, including the model the user chose. */
-const MAX_FALLBACK_ATTEMPTS = 3;
-/** If a model hasn't produced its first token by then, give another one a turn. */
-const FIRST_TOKEN_TIMEOUT_MS = 30_000;
-
-function isOpenRouterFree(qualifiedId: string): boolean {
-  const { provider, model } = parseModelId(qualifiedId);
-  return provider === "openrouter" && (model === OPENROUTER_FREE_ROUTER_ID || model.endsWith(":free"));
-}
-
-/**
- * Ordered alternatives for a struggling OpenRouter free model: the free
- * router first (it routes around busy models itself), then the other free
- * models currently listed, excluding anything tried or known-unhealthy.
- */
-async function openRouterFallbacks(tried: Set<string>): Promise<string[]> {
-  const free = (await getAvailableModels()).filter((m) => m.provider === "openrouter" && isOpenRouterFree(m.id));
-  const router = free.find((m) => m.model === OPENROUTER_FREE_ROUTER_ID);
-  const ordered = [...(router ? [router] : []), ...free.filter((m) => m.model !== OPENROUTER_FREE_ROUTER_ID)];
-  return ordered.map((m) => m.id).filter((id) => !tried.has(id) && isFallbackCandidate(id));
-}
-
-type ErrorEvent = Extract<GenerationEvent, { type: "error" }>;
-
-/** Why an attempt is being abandoned before it produced anything. */
-type Setback = { kind: "rate_limited" | "quota" | "restricted" | "timeout" | "empty"; event: ErrorEvent };
-
-/**
- * streamGeneration with resilience for OpenRouter's shared free tier.
- *
- * An attempt is abandoned — and, for OpenRouter free models, retried on
- * another free model — when, *before any text has streamed*, it is
- * rate-limited (429), refused by policy (403), silent for
- * FIRST_TOKEN_TIMEOUT_MS, or finishes with an empty completion. At most
- * MAX_FALLBACK_ATTEMPTS models are tried. Each outcome updates the model's
- * health so the picker can hint and later fallbacks can skip it; health
- * entries expire on their own. Once text has started, no retry happens.
- */
-export async function* streamWithFallback(
-  options: GenerationOptions,
-): AsyncGenerator<GenerationEvent, void, undefined> {
+/** Never changes providers silently, never retries after output, never uses paid models. */
+export async function* streamWithFallback(options: GenerationOptions): AsyncGenerator<GenerationEvent> {
   const tried = new Set<string>();
-  let current = options.model;
-
-  for (let attempt = 1; ; attempt++) {
-    tried.add(current);
-
-    // Per-attempt abort so a first-token timeout cancels only this model.
-    const attemptController = new AbortController();
-    const abortAttempt = () => attemptController.abort();
-    options.signal?.addEventListener("abort", abortAttempt, { once: true });
-    let firstToken = false;
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      if (!firstToken) {
-        timedOut = true;
-        attemptController.abort();
+  let current = qualifyModelId(options.model);
+  const deadline = new AbortController();
+  const deadlineTimer = setTimeout(() => deadline.abort(), 52_000);
+  try {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (options.signal?.aborted || deadline.signal.aborted) {
+        yield { type: "error", code: options.signal?.aborted ? "aborted" : "upstream_error", message: options.signal?.aborted ? "The request was cancelled." : "The free model took too long. Please try again." }; return;
       }
-    }, FIRST_TOKEN_TIMEOUT_MS);
-
-    let setback: Setback | null = null;
-    let doneEvent: Extract<GenerationEvent, { type: "done" }> | null = null;
-
-    try {
-      for await (const event of streamGeneration({ ...options, model: current, signal: attemptController.signal })) {
-        if (event.type === "text" && event.text.length > 0) {
-          if (!firstToken) {
-            firstToken = true;
-            clearTimeout(timer);
+      tried.add(current);
+      const controller = new AbortController();
+      const signal = AbortSignal.any([controller.signal, deadline.signal, ...(options.signal ? [options.signal] : [])]);
+      let started = false;
+      let error: Extract<GenerationEvent, { type: "error" }> | undefined;
+      const timer = setTimeout(() => controller.abort(), 15_000);
+      try {
+        for await (const event of streamGeneration({ ...options, model: current, signal })) {
+          if (event.type === "text" && event.text) { started = true; clearTimeout(timer); yield event; }
+          else if (event.type === "error") { error = event; break; }
+          else if (event.type === "done") {
+            if (started) { markHealthy(current); yield event; return; }
+            error = { type: "error", code: "upstream_error", message: "The model returned no text. Try a different free model." }; break;
           }
-          yield event;
-          continue;
         }
-        if (event.type === "error") {
-          if (!firstToken && event.code === "rate_limited") setback = { kind: "rate_limited", event };
-          else if (!firstToken && event.code === "quota_exhausted") setback = { kind: "quota", event };
-          else if (!firstToken && event.code === "model_restricted") setback = { kind: "restricted", event };
-          else if (event.code === "aborted" && timedOut && !options.signal?.aborted) {
-            setback = {
-              kind: "timeout",
-              event: {
-                type: "error",
-                code: "upstream_error",
-                message: `No response from the model within ${FIRST_TOKEN_TIMEOUT_MS / 1000} seconds.`,
-              },
-            };
-          } else yield event;
-          break;
-        }
-        if (event.type === "done") {
-          if (!firstToken) {
-            setback = {
-              kind: "empty",
-              event: { type: "error", code: "upstream_error", message: "The model returned an empty response." },
-            };
-          } else doneEvent = event;
-          break;
-        }
-        yield event;
+      } catch {
+        error = { type: "error", code: "network_error", message: "The model connection was interrupted. Please try again." };
+      } finally { clearTimeout(timer); controller.abort(); }
+      if (options.signal?.aborted) { yield { type: "error", code: "aborted", message: "The request was cancelled." }; return; }
+      error ??= { type: "error", code: "upstream_error", message: "The model ended without completing a response." };
+      if (deadline.signal.aborted) { yield { type: "error", code: "upstream_error", message: "The request timed out. Try a different free model." }; return; }
+      if (error.code === "aborted") error = { type: "error", code: "upstream_error", message: "The model did not start replying in time." };
+      if (started || ["content_blocked", "invalid_request", "not_configured"].includes(error.code)) { yield error; return; }
+      const provider = parseModelId(current).provider;
+      if (error.code === "quota_exhausted") {
+        markProviderQuotaExhausted(provider, "Free allowance reached; wait for the provider reset");
+        yield error; return;
       }
-    } finally {
-      clearTimeout(timer);
-      options.signal?.removeEventListener("abort", abortAttempt);
+      if (error.code === "rate_limited") markRateLimited(current);
+      else if (error.code !== "model_restricted") markSoftFailure(current, "A recent request failed");
+      const candidates = (await getAvailableModels()).filter(m => m.provider === provider && !tried.has(m.id) && isFallbackCandidate(m.id));
+      candidates.sort((a,b) => Number(b.model === OPENROUTER_FREE_ROUTER_ID) - Number(a.model === OPENROUTER_FREE_ROUTER_ID));
+      const next = candidates[0];
+      if (!next || attempt === 2) { yield error; return; }
+      yield { type: "fallback", from: current, to: next.id, reason: error.message };
+      current = next.id;
     }
-
-    if (doneEvent) {
-      markHealthy(current);
-      yield doneEvent;
-      return;
-    }
-    if (!setback) return; // error already yielded, or user cancelled
-
-    // Record what happened to this model.
-    switch (setback.kind) {
-      case "rate_limited":
-        markRateLimited(current, "Rate limited a moment ago");
-        break;
-      case "quota":
-        // Account-wide: every model of this provider is affected, so there is
-        // nothing to fall back to within it. Surface the message immediately.
-        markProviderQuotaExhausted(parseModelId(current).provider, "Daily free quota used up");
-        yield setback.event;
-        return;
-      case "restricted":
-        break; // markRestricted already ran inside the adapter
-      case "timeout":
-        markSoftFailure(current, "No response within 30 s");
-        break;
-      case "empty":
-        markSoftFailure(current, "Returned an empty response");
-        break;
-    }
-
-    const canFallback = isOpenRouterFree(current) && attempt < MAX_FALLBACK_ATTEMPTS && !options.signal?.aborted;
-    const next = canFallback ? (await openRouterFallbacks(tried))[0] : undefined;
-    if (!next) {
-      yield setback.event;
-      return;
-    }
-
-    console.warn(`[fallback] ${current}: ${setback.kind}; retrying with ${next} (attempt ${attempt + 1}/${MAX_FALLBACK_ATTEMPTS})`);
-    yield { type: "fallback", from: current, to: next, reason: setback.event.message };
-    current = next;
-  }
+  } finally { clearTimeout(deadlineTimer); }
 }
-
 export type { GenerationEvent, GenerationOptions, GenerationTurn } from "@/lib/ai/types";

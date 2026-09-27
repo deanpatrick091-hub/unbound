@@ -4,7 +4,7 @@
  */
 import { PROVIDER_IDS, PROVIDER_LABELS, type ModelOption, type ProviderId } from "@/lib/ai/types";
 
-export const DEFAULT_MODEL_ID = "gemini:gemini-3.6-flash";
+export const DEFAULT_MODEL_ID = "openrouter:openrouter/free";
 
 /** Qualifies a bare (legacy) model id. Bare ids were always Gemini. */
 export function qualifyModelId(id: string): string {
@@ -22,7 +22,7 @@ export function isProviderId(value: unknown): value is ProviderId {
 }
 
 /** Provider model ids: letters, digits, and the punctuation providers actually use. */
-const MODEL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,127}$/;
+const MODEL_NAME_PATTERN = /^[@A-Za-z0-9][A-Za-z0-9._:\/-]{0,127}$/;
 
 /**
  * Structural validation only. Whether the provider is configured — and
@@ -38,23 +38,9 @@ function option(provider: ProviderId, model: string, label: string, description?
   return { id: `${provider}:${model}`, provider, model, label, description };
 }
 
-/**
- * Curated catalog — only for providers without a usable discovery endpoint.
- * Groq, OpenRouter and Ollama are discovered live from their own model APIs
- * (see lib/ai/discovery.ts) so their ids are never hard-coded here.
- *
- * Gemini: verified against the free tier (the Pro preview has zero free quota
- * and is deliberately omitted). Hugging Face: as listed on 2026-09-20.
- */
+/** Client-safe default label. Actual selectable models come from server discovery. */
 export const MODEL_CATALOG: readonly ModelOption[] = [
-  option("gemini", "gemini-3.6-flash", "Gemini 3.6 Flash", "Fast, balanced — the default."),
-  option("gemini", "gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite", "Lightest and quickest."),
-
-  option("huggingface", "meta-llama/Llama-3.1-8B-Instruct", "Llama 3.1 8B Instruct", "Widely available."),
-  option("huggingface", "Qwen/Qwen3-8B", "Qwen3 8B", "Compact and capable."),
-  option("huggingface", "openai/gpt-oss-20b", "GPT-OSS 20B", "Open-weight reasoning model."),
-  option("huggingface", "deepseek-ai/DeepSeek-V4-Flash-0731", "DeepSeek V4 Flash", "Large, fast."),
-  option("huggingface", "google/gemma-4-26B-A4B-it", "Gemma 4 26B", "Google open model."),
+  option("openrouter", "openrouter/free", "Free models · Auto", "Routes to an available free model."),
 ];
 
 /** Legacy alias kept for existing imports; prefer MODEL_CATALOG. */

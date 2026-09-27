@@ -1,4 +1,5 @@
 import "server-only";
+import { getAvailableModels } from "@/lib/ai/discovery";
 
 import type { ProfileRow, UserPreferencesRow } from "@/lib/data/types";
 import { DEFAULT_MODEL_ID, resolveModel } from "@/lib/gemini/models";
@@ -41,12 +42,11 @@ export async function getDefaultModelFor(
   supabase: ServerSupabaseClient,
   userId: string,
 ): Promise<string> {
-  try {
-    const prefs = await getPreferences(supabase, userId);
-    return resolveModel(prefs?.default_model, DEFAULT_MODEL_ID);
-  } catch {
-    return DEFAULT_MODEL_ID;
-  }
+  const [prefs, models] = await Promise.all([
+    getPreferences(supabase, userId).catch(() => null), getAvailableModels(),
+  ]);
+  const requested = resolveModel(prefs?.default_model, DEFAULT_MODEL_ID);
+  return models.find(m => m.id === requested)?.id ?? models[0]?.id ?? DEFAULT_MODEL_ID;
 }
 
 export async function upsertPreferences(
