@@ -17,7 +17,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming 
   if (isUser) {
     return (
       <article aria-label="You" className="flex justify-end animate-rise-in">
-        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-raised px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap break-words sm:max-w-[72%]">
+        <div className="message-user max-w-[85%] rounded-2xl rounded-br-md px-4 py-3 text-base leading-relaxed whitespace-pre-wrap break-words sm:max-w-[72%]">
           {message.content}
         </div>
       </article>
@@ -25,7 +25,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming 
   }
 
   return (
-    <article aria-label="UNBOUND" className="flex gap-3 animate-fade-in">
+    <article aria-label="Unbound AI" className="message-assistant flex gap-3 animate-fade-in">
       <span
         aria-hidden="true"
         className={cn(

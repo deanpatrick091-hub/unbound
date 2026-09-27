@@ -39,7 +39,7 @@ export function Composer({
 
   const trimmed = value.trim();
   const isTooLong = trimmed.length > maxLength;
-  const canSend = trimmed.length > 0 && !isBusy && !isTooLong;
+  const canSend = trimmed.length > 0 && !isBusy && !isTooLong && models.some(m => m.id === model);
 
   const submit = () => {
     if (!canSend) return;
@@ -75,7 +75,7 @@ export function Composer({
     <form onSubmit={handleSubmit} className="mx-auto w-full max-w-3xl px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
       <div
         className={cn(
-          "rounded-xl border bg-surface transition-[border-color,box-shadow] duration-200",
+          "composer-glass border transition-[border-color,box-shadow] duration-200",
           "focus-within:border-border-strong focus-within:shadow-[0_0_0_1px_var(--border-strong),0_12px_40px_-20px_rgba(0,0,0,0.8)]",
           isTooLong && "border-destructive/60",
         )}
@@ -138,7 +138,7 @@ export function Composer({
             Message is too long ({trimmed.length.toLocaleString()} / {maxLength.toLocaleString()} characters).
           </span>
         ) : (
-          <>{hint} · AI can make mistakes</>
+          <>{models.length ? hint + " · AI can make mistakes" : "No free models are connected yet."}</>
         )}
       </p>
     </form>

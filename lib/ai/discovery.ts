@@ -1,232 +1,117 @@
 import "server-only";
-
 import { getModelHealth, isRestricted } from "@/lib/ai/health";
-import { MODEL_CATALOG } from "@/lib/ai/models";
+import { CLOUDFLARE_FREE_MODELS, GEMINI_FREE_MODELS, GEMMA_FREE_MODELS, ZAI_FREE_MODELS, freeTierConfirmed, hasZeroPricing, RESTRICTED_MODEL_IDS } from "@/lib/ai/free-policy";
 import { getEnabledProviders, getProviderConfig } from "@/lib/ai/providers";
+import { qualifyModelId } from "@/lib/ai/models";
 import type { ModelOption, ProviderId } from "@/lib/ai/types";
 
-/**
- * Builds the list of models the current server can actually serve.
- *
- * Groq, Cerebras and OpenRouter are discovered live from the providers' own
- * model endpoints and filtered structurally (modalities, pricing, activity),
- * so nothing here depends on remembering model ids. Gemini uses the curated
- * catalog. Results are cached in-process briefly so the app layout stays fast;
- * a failed discovery falls back to the last good list.
- */
-
-const CACHE_TTL_MS = 5 * 60 * 1000;
-const DISCOVERY_TIMEOUT_MS = 4_000;
-
-/** OpenRouter's auto-routing endpoint over its free tier — a stable, documented id. */
 export const OPENROUTER_FREE_ROUTER_ID = "openrouter/free";
+const TTL = 120_000;
+const cache = new Map<ProviderId, { expires: number; models: ModelOption[] }>();
+const pending = new Map<ProviderId, Promise<ModelOption[]>>();
 
-interface CacheEntry {
-  expires: number;
-  models: ModelOption[];
-}
-
-const cache = new Map<ProviderId, CacheEntry>();
-
-/**
- * Models the server can serve right now: discovered/curated per provider,
- * minus anything the provider has refused to serve us (restricted), each
- * annotated with its current health so the picker can hint at busy models.
- */
 export async function getAvailableModels(): Promise<ModelOption[]> {
-  const enabled = getEnabledProviders();
-  const lists = await Promise.all(enabled.map((provider) => modelsFor(provider)));
-  return lists
-    .flat()
-    .filter((m) => !isRestricted(m.id))
-    .map((m) => {
-      const health = getModelHealth(m.id);
-      return health.state === "available" ? m : { ...m, health };
-    });
+  const lists = await Promise.all(getEnabledProviders().map(modelsFor));
+  return lists.flat().filter(m => !isRestricted(m.id) && !RESTRICTED_MODEL_IDS.has(m.id)).map(m => ({ ...m, health: getModelHealth(m.id) }));
 }
-
-/** Forces a fresh discovery next call (e.g. after a provider says a model is gone). */
-export function invalidateModelCache(provider?: ProviderId): void {
-  if (provider) cache.delete(provider);
-  else cache.clear();
+export async function getAvailableModel(id: string): Promise<ModelOption | undefined> {
+  const qualified = qualifyModelId(id);
+  return (await getAvailableModels()).find(model => model.id === qualified);
 }
-
+export function invalidateModelCache(provider?: ProviderId) {
+  if (provider) cache.delete(provider); else cache.clear();
+}
+function label(id: string) {
+  return id.split("/").at(-1)!.replace(/:free$/, "").split(/[-_]/).map(s => /^(gpt|oss|llm|ai)$/i.test(s) || /^\d/.test(s) ? s.toUpperCase() : s.charAt(0).toUpperCase() + s.slice(1)).join(" ");
+}
+function option(provider: ProviderId, model: string, name?: string, context?: number, output?: number): ModelOption {
+  return { id: provider + ":" + model, provider, model, label: name || label(model), contextLength: context, maxOutputTokens: output,
+    description: context ? Math.round(context / 1000) + "K context" : "Free-tier usage limits apply" };
+}
+function router(): ModelOption {
+  return { ...option("openrouter", OPENROUTER_FREE_ROUTER_ID, "Free models · Auto"), description: "Routes your request to an available free model." };
+}
+async function fetchJson(url: string, headers: Record<string, string> = {}): Promise<unknown> {
+  const response = await fetch(url, { headers, signal: AbortSignal.timeout(12000), cache: "no-store" });
+  if (!response.ok) throw new Error("Model discovery HTTP " + response.status);
+  return response.json();
+}
 async function modelsFor(provider: ProviderId): Promise<ModelOption[]> {
-  const curated = MODEL_CATALOG.filter((m) => m.provider === provider);
-  if (provider === "gemini") return curated;
-
-  const cached = cache.get(provider);
-  if (cached && cached.expires > Date.now()) return cached.models;
-
-  try {
-    const models =
-      provider === "groq"
-        ? await discoverGroq()
-        : provider === "cerebras"
-          ? await discoverCerebras()
-          : await discoverOpenRouter();
-    cache.set(provider, { expires: Date.now() + CACHE_TTL_MS, models });
+  const previous = cache.get(provider);
+  if (previous && previous.expires > Date.now()) return previous.models;
+  const running = pending.get(provider);
+  if (running) return running;
+  const request = discover(provider).then(models => {
+    cache.set(provider, { models, expires: Date.now() + TTL });
     return models;
-  } catch (error) {
-    console.warn(`[models] ${provider} discovery failed:`, error instanceof Error ? error.message : error);
-    // Stale-while-error: keep serving the last good list if we have one.
-    if (cached) return cached.models;
-    // OpenRouter's router id is stable even when its catalogue can't be read.
-    return provider === "openrouter" ? [openRouterRouterOption(200_000)] : [];
-  }
+  }).catch(() => {
+    // Fail closed on catalog errors: never keep stale prices or unknown models.
+    // The documented free router is the only safe catalog-independent fallback.
+    const models = provider === "openrouter" ? [router()] : [];
+    cache.set(provider, { models, expires: Date.now() + 15_000 });
+    return models;
+  }).finally(() => pending.delete(provider));
+  pending.set(provider, request);
+  return request;
 }
 
-async function fetchJson(url: string, headers: Record<string, string>): Promise<unknown> {
-  const res = await fetch(url, { headers, signal: AbortSignal.timeout(DISCOVERY_TIMEOUT_MS), cache: "no-store" });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-}
-
-function formatContext(tokens: number | undefined): string {
-  if (!tokens) return "";
-  return tokens >= 1_000_000 ? `${Math.round(tokens / 100_000) / 10}M context` : `${Math.round(tokens / 1000)}K context`;
-}
-
-// ---------------------------------------------------------------------------
-// Groq — https://api.groq.com/openai/v1/models (authenticated)
-// ---------------------------------------------------------------------------
-
-interface GroqModel {
-  id?: string;
-  name?: string;
-  active?: boolean;
-  context_window?: number;
-  max_completion_tokens?: number;
-  input_modalities?: string[];
-  output_modalities?: string[];
-}
-
-/** Classifier/guard models answer with labels, not prose. */
-const GROQ_NON_CHAT = /guard|safeguard|moderation|embed/i;
-
-async function discoverGroq(): Promise<ModelOption[]> {
-  const config = getProviderConfig("groq");
-  if (!config || config.kind !== "openai-compatible" || !config.apiKey) return [];
-  const body = (await fetchJson(`${config.baseUrl}/models`, { Authorization: `Bearer ${config.apiKey}` })) as {
-    data?: GroqModel[];
-  };
-
-  return (body.data ?? [])
-    .filter(
-      (m): m is GroqModel & { id: string } =>
-        typeof m.id === "string" &&
-        m.active !== false &&
-        (m.input_modalities ?? ["text"]).includes("text") &&
-        (m.output_modalities ?? ["text"]).includes("text") &&
-        !GROQ_NON_CHAT.test(m.id),
-    )
-    .map((m) => ({
-      id: `groq:${m.id}`,
-      provider: "groq" as const,
-      model: m.id,
-      label: m.name?.trim() || m.id,
-      description: formatContext(m.context_window),
-      maxOutputTokens: m.max_completion_tokens,
-      contextLength: m.context_window,
-    }))
-    .sort((a, b) => a.label.localeCompare(b.label));
-}
-
-// ---------------------------------------------------------------------------
-// Cerebras — https://api.cerebras.ai/v1/models (authenticated)
-// ---------------------------------------------------------------------------
-
-interface CerebrasModel {
-  id?: string;
-  owned_by?: string;
-}
-
-/** "qwen-3.8-27b" → "Qwen 3.8 27B", "gpt-oss-120b" → "GPT OSS 120B". */
-function prettifyModelId(id: string): string {
-  return id
-    .split(/[-_/]/)
-    .filter(Boolean)
-    .map((part) => (/^\d/.test(part) ? part.toUpperCase() : /^(gpt|oss|llm|ai)$/i.test(part) ? part.toUpperCase() : part[0].toUpperCase() + part.slice(1)))
-    .join(" ");
-}
-
-async function discoverCerebras(): Promise<ModelOption[]> {
-  const config = getProviderConfig("cerebras");
-  if (!config || config.kind !== "openai-compatible" || !config.apiKey) return [];
-  const body = (await fetchJson(`${config.baseUrl}/models`, { Authorization: `Bearer ${config.apiKey}` })) as {
-    data?: CerebrasModel[];
-  };
-  return (body.data ?? [])
-    .filter((m): m is CerebrasModel & { id: string } => typeof m.id === "string")
-    .map((m) => ({
-      id: `cerebras:${m.id}`,
-      provider: "cerebras" as const,
-      model: m.id,
-      label: prettifyModelId(m.id),
-      description: m.owned_by ? `by ${m.owned_by}` : undefined,
-    }))
-    .sort((a, b) => a.label.localeCompare(b.label));
-}
-
-// ---------------------------------------------------------------------------
-// OpenRouter — https://openrouter.ai/api/v1/models (public)
-// ---------------------------------------------------------------------------
-
-interface OpenRouterModel {
-  id?: string;
-  name?: string;
-  context_length?: number;
-  pricing?: { prompt?: string; completion?: string };
-  architecture?: { output_modalities?: string[] };
+interface RemoteModel {
+  capabilities?: { completion_chat?: boolean }; archived?: boolean; max_context_length?: number;
+  providers?: { status?: string; context_length?: number }[];
+  id?: string; name?: string; displayName?: string; active?: boolean;
+  context_window?: number; context_length?: number; inputTokenLimit?: number;
+  max_completion_tokens?: number; outputTokenLimit?: number;
+  input_modalities?: string[]; output_modalities?: string[];
+  supportedGenerationMethods?: string[];
+  pricing?: Record<string, unknown>;
+  architecture?: { input_modalities?: string[]; output_modalities?: string[] };
   top_provider?: { max_completion_tokens?: number | null };
 }
-
-/** Safety classifiers and audio generators aren't chat models. */
-const OPENROUTER_NON_CHAT = /content-safety|guard|moderation|lyria|tts|whisper/i;
-
-function isFree(m: OpenRouterModel): boolean {
-  return Number(m.pricing?.prompt ?? 1) === 0 && Number(m.pricing?.completion ?? 1) === 0;
-}
-
-function openRouterRouterOption(contextLength: number): ModelOption {
-  return {
-    id: `openrouter:${OPENROUTER_FREE_ROUTER_ID}`,
-    provider: "openrouter",
-    model: OPENROUTER_FREE_ROUTER_ID,
-    label: "Free Models Router (auto)",
-    description: "Picks an available free model for you — most resilient to rate limits.",
-    contextLength,
-  };
-}
-
-async function discoverOpenRouter(): Promise<ModelOption[]> {
-  const config = getProviderConfig("openrouter");
-  if (!config || config.kind !== "openai-compatible") return [];
-  const headers: Record<string, string> = {};
-  if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
-  const body = (await fetchJson(`${config.baseUrl}/models`, headers)) as { data?: OpenRouterModel[] };
-
-  const free = (body.data ?? []).filter(
-    (m): m is OpenRouterModel & { id: string } =>
-      typeof m.id === "string" &&
-      isFree(m) &&
-      (m.architecture?.output_modalities ?? ["text"]).every((o) => o === "text") &&
-      !OPENROUTER_NON_CHAT.test(m.id),
-  );
-
-  const router = free.find((m) => m.id === OPENROUTER_FREE_ROUTER_ID);
-  const rest = free
-    .filter((m) => m.id !== OPENROUTER_FREE_ROUTER_ID)
-    .map((m) => ({
-      id: `openrouter:${m.id}`,
-      provider: "openrouter" as const,
-      model: m.id,
-      label: (m.name ?? m.id).replace(/\s*\(free\)\s*$/i, "").trim(),
-      description: formatContext(m.context_length),
-      maxOutputTokens: m.top_provider?.max_completion_tokens ?? undefined,
-      contextLength: m.context_length,
-    }))
-    .sort((a, b) => a.label.localeCompare(b.label));
-
-  return [openRouterRouterOption(router?.context_length ?? 200_000), ...rest];
+const NON_CHAT = /guard|safeguard|moderation|content-safety|embed|whisper|orpheus|tts|audio|speech|lyria|compound/i;
+async function discover(provider: ProviderId): Promise<ModelOption[]> {
+  const config = getProviderConfig(provider);
+  if (!config) return [];
+  if (provider === "gemini") {
+    const all: RemoteModel[] = [];
+    let pageToken = "";
+    for (let page = 0; page < 5; page++) {
+      const url = new URL("https://generativelanguage.googleapis.com/v1beta/models");
+      url.searchParams.set("pageSize", "100");
+      if (pageToken) url.searchParams.set("pageToken", pageToken);
+      const body = await fetchJson(url.toString(), { "x-goog-api-key": process.env.GEMINI_API_KEY!.trim() }) as { models?: RemoteModel[]; nextPageToken?: string };
+      all.push(...(body.models ?? []));
+      if (!body.nextPageToken) break;
+      pageToken = body.nextPageToken;
+    }
+    return all.filter(m => m.name && ((freeTierConfirmed("gemini") ? GEMINI_FREE_MODELS : GEMMA_FREE_MODELS) as readonly string[]).includes(m.name.replace(/^models\//, "")) && m.supportedGenerationMethods?.includes("generateContent"))
+      .map(m => option(provider, m.name!.replace(/^models\//, ""), m.displayName, m.inputTokenLimit, m.outputTokenLimit));
+  }
+  if (config.kind !== "openai-compatible") return [];
+  const headers: Record<string, string> = config.apiKey ? { Authorization: "Bearer " + config.apiKey } : {};
+  if (provider === "zai") return ZAI_FREE_MODELS.map(m => option(provider, m));
+  if (provider === "cloudflare") return CLOUDFLARE_FREE_MODELS.map(m => option(provider, m));
+  if (provider === "ollama") {
+    // Only chat-capable models are exposed, not local embedding models.
+    const root = config.baseUrl.replace(/\/v1$/, "");
+    const body = await fetchJson(root + "/api/tags") as { models?: { name?: string }[] };
+    const checks = await Promise.all((body.models ?? []).filter(m => m.name && !NON_CHAT.test(m.name)).map(async m => {
+      try {
+        const res = await fetch(root + "/api/show", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: m.name }), signal: AbortSignal.timeout(4000) });
+        const detail = await res.json() as { capabilities?: string[] };
+        return res.ok && detail.capabilities?.includes("completion") ? option(provider, m.name!) : null;
+      } catch { return null; }
+    }));
+    return checks.filter((m): m is ModelOption => m !== null);
+  }
+  const body = await fetchJson(config.baseUrl + "/models", headers) as { data?: RemoteModel[] };
+  const chat = (body.data ?? []).filter(m => typeof m.id === "string" && m.active !== false && m.archived !== true && !NON_CHAT.test(m.id) &&
+    (provider !== "mistral" || m.capabilities?.completion_chat === true) &&
+    (provider !== "huggingface" || m.providers?.some(p => p.status === "live")) &&
+    (m.input_modalities ?? m.architecture?.input_modalities ?? ["text"]).includes("text") &&
+    (m.output_modalities ?? m.architecture?.output_modalities ?? ["text"]).includes("text"));
+  const filtered = provider === "openrouter" ? chat.filter(m => hasZeroPricing(m.pricing)) : chat;
+  const models = filtered.filter(m => m.id !== OPENROUTER_FREE_ROUTER_ID).map(m => option(provider, m.id!, m.name?.replace(/\s*\(free\)\s*$/i, ""), m.context_window ?? m.context_length ?? m.max_context_length ?? m.providers?.find(p => p.status === "live")?.context_length, m.max_completion_tokens ?? m.top_provider?.max_completion_tokens ?? undefined)).sort((a,b) => a.label.localeCompare(b.label));
+  if (provider === "huggingface") for (const model of models) model.description = "$0.10 monthly free credit shared across models; stops when exhausted.";
+  if (provider === "mistral") for (const model of models) model.description = "Included monthly Free-mode allowance; stops when exhausted.";
+  return provider === "openrouter" ? [router(), ...models] : models;
 }

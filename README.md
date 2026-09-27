@@ -1,153 +1,98 @@
-# UNBOUND
+# Unbound AI
 
-An AI workspace built on Next.js (App Router), Supabase, and the Google Gemini API.
+Next.js chat, Council, website builder and free-provider model library.
+This update targets the existing Vercel site: https://unbound-lilac.vercel.app.
 
-- **Chat** — streaming conversations with persistent history, per-conversation model choice.
-- **Council** — one question, four independent perspectives (Analyst, Skeptic, Optimist,
-  Contrarian) run in parallel, then a Final Judge synthesises a verdict.
-- **Builder** — describe a website, see it render live in a sandboxed preview, and refine it
-  in conversation ("make the hero darker", "add an about section").
-- **Accounts** — email/password auth, password reset, profile, preferences, usage view.
+## What changed
 
-## Stack
+- Frosted glass login, workspace, sidebar, chat and model tiles.
+- Persistent light/dark control; per-account local wallpaper upload, presets and dimming.
+- Searchable models grouped into provider folders; eight supported connections.
+- Server-enforced free model discovery, zero-price OpenRouter routing, bounded timeouts, explicit partial-stream errors and same-provider fallback before output begins.
+- Removed Puter image calls and Cerebras trials. Removed two OpenRouter models that refuse general chat apps.
+- Optional Cloudflare FLUX image generation behind a verified Workers Free connection.
+- Signup and password-reset links use a configured production origin; refresh cookies survive auth redirects.
 
-Next.js 16 · React 19 · TypeScript · Tailwind CSS v4 · shadcn/ui · Lucide ·
-`@google/genai` (server-only) · Supabase (`@supabase/ssr`, Postgres + RLS) · react-markdown.
+## Run on your computer
 
-## Getting started
+Use Node.js 22.15+ or 24 LTS. In this folder:
 
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Create `.env.local` from `.env.example` and fill in the values (see table below).
-
-3. Apply the database schema (see **Database** below).
-
-4. Run the dev server
-
-   ```bash
-   npm run dev
-   ```
-
-## Environment variables
-
-| Variable | Required | Description |
-| --- | --- | --- |
-| `NEXT_PUBLIC_SITE_URL` | Yes | Canonical site URL, e.g. `https://unbound-lilac.vercel.app`. Every absolute link (auth emails, attribution) is built from it. On Vercel it falls back to `VERCEL_PROJECT_PRODUCTION_URL`. |
-| `GEMINI_API_KEY` | Yes | Google Gemini. **Server-only**; never exposed to the browser. |
-| `GEMINI_MODEL` | No | Default model as `provider:model` (default `gemini:gemini-3.6-flash`). |
-| `GROQ_API_KEY` | No | Enables Groq. Models discovered live from `/models`. |
-| `CEREBRAS_API_KEY` | No | Enables Cerebras (OpenAI-compatible). Models discovered live from `/v1/models`. |
-| `OPENROUTER_API_KEY` | No | Enables OpenRouter (curated `:free` models in `lib/ai/models.ts`). |
-| `OPENROUTER_SITE_URL`, `OPENROUTER_APP_NAME` | No | Optional OpenRouter attribution headers. |
-| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL (public). |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes | Supabase publishable key (public by design; RLS protects data). |
-
-All provider keys are read only in `lib/ai/providers.ts` (`server-only`). The browser receives
-model ids and labels, never keys. The Supabase **service-role** key is never used.
-
-## AI providers
-
-`lib/ai/` is the provider layer. Model ids are `provider:model` (bare ids are treated as
-Gemini for backward compatibility). Gemini uses its native SDK; Groq, Cerebras and
-OpenRouter share one OpenAI-compatible streaming client. The chat composer and Settings
-show only providers whose keys are configured.
-
-Model lists for **Groq, Cerebras and OpenRouter are discovered live** from each
-provider's model API (filtered to active, text-in/text-out chat models; OpenRouter to
-free-priced models plus the `openrouter/free` router) and cached for five minutes, so no ids
-are hard-coded for them. Gemini uses the curated `MODEL_CATALOG` in `lib/ai/models.ts`.
-Provider errors (400/401/402/404/429/5xx) are surfaced to the user with the provider's own
-reason attached.
-
-**Resilience** (`lib/ai/generate.ts`, `lib/ai/health.ts`): before a model has produced any
-text, a 429, a policy 403, an empty completion, or 30 s of silence abandons that attempt;
-OpenRouter free models then fall back to `openrouter/free` and other healthy free models
-(three models per request at most). Each outcome sets a short-lived in-memory health state —
-`busy`, `rate_limited`, `unavailable` (still selectable, shown with a hint, skipped as
-fallbacks) or `restricted` (hidden). States expire on their own; a successful reply clears them.
-
-## Database
-
-Schema lives in `supabase/migrations/`. To apply it:
-
-**Option A — SQL Editor (quickest):** Supabase Dashboard → SQL Editor → New query →
-paste the contents of `supabase/migrations/20260914120000_initial_schema.sql` → Run.
-
-**Option B — Supabase CLI (free):**
-
-```bash
-npx supabase login
-npx supabase link --project-ref <your-project-ref>
-npx supabase db push
+```sh
+npm ci
 ```
 
-Every table has Row Level Security enabled with policies scoped to `auth.uid()`.
-Usage limits are enforced by the `consume_request()` Postgres function; the numbers
-live in `lib/limits/config.ts`.
+Copy `.env.example` to `.env.local` and insert your existing credentials. This archive intentionally contains no private API keys. On Windows, use `npm.cmd` if PowerShell blocks `npm` scripts.
 
-### Auth configuration (Supabase Dashboard → Authentication)
-
-- **URL Configuration → Site URL:** `https://unbound-lilac.vercel.app`
-- **URL Configuration → Redirect URLs:** add `https://unbound-lilac.vercel.app/**`.
-  This must match `NEXT_PUBLIC_SITE_URL`, or Supabase will reject the redirect.
-- **Email Templates** (recommended): point links at `/auth/confirm` with a token hash so
-  they work from any device:
-  - Confirm signup: `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`
-  - Reset password: `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/reset-password`
-
-  The default `{{ .ConfirmationURL }}` templates also work, but only when the link is
-  opened in the same browser that started the flow (PKCE).
-
-## Project structure
-
-```
-app/
-  (auth)/               login, signup, forgot-password, reset-password + Server Actions
-  (app)/                authenticated shell: chat (/, /c/[id]), /council, /settings
-  api/chat              streaming chat turn (NDJSON)
-  api/council           Council orchestration (NDJSON)
-  api/conversations     list / rename / delete
-  auth/confirm          lands email links (confirmation + password reset)
-components/
-  shell/                sidebar, mobile drawer, shell context
-  chat/, council/       screens and message rendering
-  auth/, settings/      forms
-hooks/                  use-chat, use-council (stream consumers)
-lib/
-  gemini/               server-only client, streaming adapter, model allowlist
-  council/              server-only prompts, shared types/state
-  data/                 RLS-scoped data access
-  limits/               usage limits config + consume_request() wrapper
-  supabase/             browser/server/proxy clients, DB types
-proxy.ts                session refresh + auth boundary (Next 16 "proxy")
-supabase/migrations/    schema
+```sh
+npm run dev
 ```
 
-## Website builder sandbox
+The dev server prints its own address. Email links always use the published HTTPS origin
+(`SITE_URL` / `NEXT_PUBLIC_SITE_URL`, defaulting to `https://unbound-lilac.vercel.app`) in
+every environment — a localhost value is rejected, since such a link is broken for whoever
+receives the email. To exercise a confirmation or reset link locally, open the link from the
+email and let it land on the deployed site.
 
-Generated sites (`lib/build/`) never run inside UNBOUND itself. The preview is an
-`<iframe sandbox="allow-scripts allow-popups allow-forms allow-modals allow-popups-to-escape-sandbox">`
-**without** `allow-same-origin`, so the page has an opaque origin (no cookies, no storage,
-no credentialed requests), and every generated document carries a CSP with
-`connect-src 'none'`, `frame-src 'none'`, `base-uri 'none'` and `form-action 'none'`
-(scripts/styles only inline or from cdnjs, unpkg, jsDelivr, Tailwind CDN and Google Fonts).
-"Open in new tab" posts the files to `/api/build/preview`, which serves them with a
-`Content-Security-Policy: sandbox …` header — never a `blob:` URL, which would be same-origin.
-The server only parses and forwards text; it never evaluates generated code. Work autosaves
-to the browser's localStorage per user.
+## Publish the update
 
-## Streaming protocol
+1. Replace the source in your existing Unbound repository/project with this folder's contents. Preserve your own local `.env.local` privately. Do not upload node_modules or .next.
+2. In the existing Vercel project, retain the Supabase and provider environment variables. Add `SITE_URL=https://unbound-lilac.vercel.app` to Production.
+3. Add optional provider keys only from accounts you own. Read `FREE-PROVIDERS.md` before changing a confirmation flag to `true`.
+4. Deploy this source to the existing Vercel project. A local build or this ZIP does not change the live website.
+5. Complete the Supabase settings below, then test a fresh signup and reset email against the published site.
 
-Both `/api/chat` and `/api/council` respond with `application/x-ndjson` — one JSON
-event per line. Errors after the 200 header (rate limits, safety blocks) arrive
-in-band as `error` events. See `lib/chat/types.ts` and `lib/council/types.ts`.
+## Supabase signup: required dashboard settings
 
-## Scripts
+Open the matching project's Authentication → URL Configuration.
 
-- `npm run dev` — development server
-- `npm run build` — production build (includes type-checking)
-- `npm run lint` — ESLint
+- Site URL: `https://unbound-lilac.vercel.app`
+- Add redirect URL: `https://unbound-lilac.vercel.app/auth/confirm`
+- Add reset redirect URL: `https://unbound-lilac.vercel.app/auth/confirm?next=/reset-password`
+- Preserve other intentionally used origins. Avoid broad production wildcards.
+
+In Authentication → Emails, the token-hash templates below work across browsers and devices. The callback also supports the default PKCE `code` flow; that flow normally needs the browser where signup began.
+
+Signup confirmation link:
+
+```html
+<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email">Confirm your email</a>
+```
+
+Password reset link:
+
+```html
+<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/reset-password">Reset your password</a>
+```
+
+Public email signup also needs a configured SMTP provider. Supabase's default email sender only delivers to project-team addresses and is not a public production mail service. Keep email verification enabled. Use your own verified sending domain and a free SMTP allowance if required; no SMTP account was created or configured by this update.
+
+Existing database migrations are in `supabase/migrations`. Image creation shares the existing build/creation request budget and refuses requests when that budget check is unavailable. No new database migration is required for the appearance or model changes. Do not blindly rerun migrations already applied to your project.
+
+## Verify
+
+```sh
+npm test
+npm run build
+npm run check:models
+```
+
+The first two commands do not generate AI responses. The explicit model audit consumes the connected providers' free allowances; it uses harmless test prompts and no paid routing. Review `reports/model-audit.json`. To recheck only failed/new models:
+
+```sh
+npm run check:models -- --retry-failed
+```
+
+A successful model test confirms one response at the recorded time, not guaranteed future uptime. Free quotas are shared by all visitors using a provider key. See `reports/validation.md` for the checks and remaining limitations of this delivery.
+
+## Privacy and behavior
+
+- Provider secrets remain server-side. Visitors cannot submit arbitrary paid model IDs.
+- Selected-provider prompts go to that provider. Fallback stays with that provider and is announced in the chat.
+- Wallpapers remain in this browser's storage, keyed by account; they are not sent to AI providers or synced to other devices.
+- New provider accounts, API keys, paid plans and subscriptions are never created automatically.
+
+## Official references
+
+- Supabase redirects: https://supabase.com/docs/guides/auth/redirect-urls
+- Supabase SMTP: https://supabase.com/docs/guides/auth/auth-smtp
+- Provider pricing and configuration: `FREE-PROVIDERS.md`

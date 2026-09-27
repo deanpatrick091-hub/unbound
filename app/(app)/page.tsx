@@ -3,12 +3,15 @@ import { redirect } from "next/navigation";
 import { ChatScreen } from "@/components/chat/chat-screen";
 import { getSession } from "@/lib/auth/session";
 import { getDefaultModelFor } from "@/lib/data/account";
+import { getAvailableModel } from "@/lib/ai/discovery";
 
-export default async function NewChatPage() {
+export default async function NewChatPage({ searchParams }: PageProps<"/">) {
   const { supabase, user } = await getSession();
   if (!user) redirect("/login");
 
-  const model = await getDefaultModelFor(supabase, user.id);
+  const params = await searchParams;
+  const chosen = typeof params.model === "string" ? await getAvailableModel(params.model) : undefined;
+  const model = chosen?.id ?? await getDefaultModelFor(supabase, user.id);
 
-  return <ChatScreen conversationId={null} title={null} initialMessages={[]} model={model} />;
+  return <ChatScreen key={model} conversationId={null} title={null} initialMessages={[]} model={model} />;
 }

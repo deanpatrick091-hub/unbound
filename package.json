@@ -6,11 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --import ./scripts/test-loader.mjs --test tests/*.test.mjs",
+    "check:models": "node --import ./scripts/test-loader.mjs scripts/check-models.mjs",
+    "check:http": "node scripts/check-http.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.22.0",
-    "@heyputer/puter.js": "^2.6.3",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.116.0",
     "class-variance-authority": "^0.7.1",

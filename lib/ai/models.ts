@@ -4,7 +4,7 @@
  */
 import { PROVIDER_IDS, PROVIDER_LABELS, type ModelOption, type ProviderId } from "@/lib/ai/types";
 
-export const DEFAULT_MODEL_ID = "gemini:gemini-3.6-flash";
+export const DEFAULT_MODEL_ID = "openrouter:openrouter/free";
 
 /** Qualifies a bare (legacy) model id. Bare ids were always Gemini. */
 export function qualifyModelId(id: string): string {
@@ -22,7 +22,7 @@ export function isProviderId(value: unknown): value is ProviderId {
 }
 
 /** Provider model ids: letters, digits, and the punctuation providers actually use. */
-const MODEL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,127}$/;
+const MODEL_NAME_PATTERN = /^[@A-Za-z0-9][A-Za-z0-9._:\/-]{0,127}$/;
 
 /**
  * Structural validation only. Whether the provider is configured — and
@@ -38,17 +38,9 @@ function option(provider: ProviderId, model: string, label: string, description?
   return { id: `${provider}:${model}`, provider, model, label, description };
 }
 
-/**
- * Curated catalog — only for providers without a usable discovery endpoint.
- * Groq, Cerebras and OpenRouter are discovered live from their own model APIs
- * (see lib/ai/discovery.ts) so their ids are never hard-coded here.
- *
- * Gemini: verified against the free tier (the Pro preview has zero free quota
- * and is deliberately omitted).
- */
+/** Client-safe default label. Actual selectable models come from server discovery. */
 export const MODEL_CATALOG: readonly ModelOption[] = [
-  option("gemini", "gemini-3.6-flash", "Gemini 3.6 Flash", "Fast, balanced — the default."),
-  option("gemini", "gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite", "Lightest and quickest."),
+  option("openrouter", "openrouter/free", "Free models · Auto", "Routes to an available free model."),
 ];
 
 /** Legacy alias kept for existing imports; prefer MODEL_CATALOG. */
@@ -59,7 +51,7 @@ export function findModel(id: string, models: readonly ModelOption[] = MODEL_CAT
   return models.find((m) => m.id === qualified);
 }
 
-/** Human label for any id, even one the live catalogue no longer lists. */
+/** Human label for any id, even one not in the catalog (e.g. a local Ollama tag). */
 export function describeModel(id: string, models: readonly ModelOption[] = MODEL_CATALOG): {
   provider: ProviderId;
   providerLabel: string;

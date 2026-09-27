@@ -77,13 +77,18 @@ export async function* streamGemini(
 ): AsyncGenerator<GenerationEvent, void, undefined> {
   const { model, systemInstruction, turns, signal, temperature } = options;
   let usage: TokenUsage | undefined;
+  let completed = false;
 
   try {
     const client = getGeminiClient();
     const stream = await client.models.generateContentStream({
       model,
-      contents: toGeminiContents(turns),
-      config: { systemInstruction, abortSignal: signal, temperature },
+      contents: toGeminiContents(model.startsWith("gemma-") ? turns.map((turn, index) => index === 0 ? { ...turn, content: systemInstruction + "\n\n" + turn.content } : turn) : turns),
+      config: {
+        // Gemma does not support Gemini's separate systemInstruction field.
+        ...(model.startsWith("gemma-") ? {} : { systemInstruction }),
+        abortSignal: signal, temperature, maxOutputTokens: options.maxTokens ?? 4096,
+      },
     });
 
     for await (const chunk of stream) {
@@ -109,6 +114,11 @@ export async function* streamGemini(
       }
 
       const finishReason = chunk.candidates?.[0]?.finishReason;
+      if (finishReason) completed = true;
+      if (finishReason === FinishReason.MAX_TOKENS) {
+        yield { type: "error", code: "upstream_error", message: "The model reached its response limit. Ask for a shorter answer or continue from the last section." };
+        return;
+      }
       if (finishReason && BLOCKED_FINISH_REASONS.has(finishReason)) {
         yield {
           type: "error",
@@ -119,11 +129,12 @@ export async function* streamGemini(
       }
     }
 
+    if (!completed) { yield { type: "error", code: "network_error", message: "The response ended early. Please try again." }; return; }
     yield { type: "done", usage };
   } catch (error) {
     if (!(error instanceof Error && error.name === "AbortError")) {
-      console.error("[gemini] stream failed:", error);
+      console.error("[gemini] stream failed", error instanceof ApiError ? error.status : "upstream");
     }
-    yield toErrorEvent(error);
+    yield signal?.aborted ? { type: "error", code: "aborted", message: "The request was cancelled." } : toErrorEvent(error);
   }
 }

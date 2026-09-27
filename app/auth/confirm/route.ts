@@ -2,6 +2,7 @@ import type { EmailOtpType } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { safeNextPath } from "@/lib/auth/redirect";
+import { getSiteOrigin } from "@/lib/auth/site-url";
 import { createClient } from "@/lib/supabase/server";
 
 const OTP_TYPES: ReadonlySet<string> = new Set<EmailOtpType>([
@@ -51,16 +52,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 }
 
 function redirectTo(request: NextRequest, pathname: string): NextResponse {
-  const url = request.nextUrl.clone();
-  url.pathname = pathname;
-  url.search = "";
+  const url = new URL(pathname, getSiteOrigin());
   return NextResponse.redirect(url);
 }
 
 function redirectWithError(request: NextRequest, message: string): NextResponse {
-  const url = request.nextUrl.clone();
-  url.pathname = "/login";
-  url.search = "";
+  const url = new URL("/login", getSiteOrigin());
   url.searchParams.set("error", message);
   return NextResponse.redirect(url);
 }

@@ -1,4 +1,5 @@
-﻿import type { NextRequest } from "next/server";
+import { getAvailableModel } from "@/lib/ai/discovery";
+import type { NextRequest } from "next/server";
 
 import { errorResponse, limitResponse, NDJSON_HEADERS } from "@/lib/api/responses";
 import { getSession } from "@/lib/auth/session";
@@ -78,6 +79,10 @@ export async function POST(request: NextRequest): Promise<Response> {
     return errorResponse(400, "not_configured", providerNotConfiguredMessage(provider));
   }
 
+  if (!(await getAvailableModel(model))) {
+    return errorResponse(400, "invalid_request", "This model is not in the current free model library. Choose another model.");
+  }
+
   const limit = await consumeRequest(supabase, "council");
   if (!limit.allowed) return limitResponse(limit);
 
@@ -136,7 +141,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           model,
           systemInstruction: instructionFor(role),
           turns: [{ role: "user", content: input }],
-          signal: abort.signal,
+          signal: AbortSignal.any([abort.signal, request.signal]),
           temperature: role === "judge" ? 0.4 : 0.8,
         })) {
           if (event.type === "text") {

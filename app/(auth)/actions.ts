@@ -4,10 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { safeNextPath } from "@/lib/auth/redirect";
+import { getSiteOrigin } from "@/lib/auth/site-url";
+import { getAvailableModel } from "@/lib/ai/discovery";
 import { getSession } from "@/lib/auth/session";
 import { upsertPreferences, upsertProfile } from "@/lib/data/account";
 import { isAllowedModel } from "@/lib/gemini/models";
-import { siteUrl } from "@/lib/site-url";
 import { createClient } from "@/lib/supabase/server";
 
 export interface AuthActionState {
@@ -67,7 +68,7 @@ export async function signup(_prev: AuthActionState, formData: FormData): Promis
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { emailRedirectTo: siteUrl("/auth/confirm") },
+    options: { emailRedirectTo: `${getSiteOrigin()}/auth/confirm` },
   });
   if (error) return { error: error.message };
 
@@ -102,7 +103,7 @@ export async function requestPasswordReset(
 
   const supabase = await createClient();
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: siteUrl("/auth/confirm?next=/reset-password"),
+    redirectTo: `${getSiteOrigin()}/auth/confirm?next=/reset-password`,
   });
   if (error) {
     // Rate limits are the only error worth surfacing; everything else stays
@@ -180,6 +181,7 @@ export async function updatePreferences(
 
   const model = String(formData.get("default_model") ?? "");
   if (!isAllowedModel(model)) return { error: "That model isn't available." };
+  if (!(await getAvailableModel(model))) return { error: "Choose a model from the current free model library." };
 
   try {
     await upsertPreferences(supabase, { userId: user.id, defaultModel: model });

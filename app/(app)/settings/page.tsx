@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { PasswordForm, PreferencesForm, ProfileForm } from "@/components/settings/settings-forms";
 import { UsagePanel } from "@/components/settings/usage-panel";
+import { AppearanceControls } from "@/components/appearance/appearance";
 import { getAvailableModels } from "@/lib/ai/discovery";
 import { DEFAULT_MODEL_ID, resolveModel } from "@/lib/ai/models";
 import { getSession } from "@/lib/auth/session";
@@ -31,6 +32,9 @@ export default async function SettingsPage() {
         </header>
 
         <div className="mt-10 space-y-10">
+          <Section title="Appearance" description="Your theme and personal chat background.">
+            <AppearanceControls />
+          </Section>
           <Section title="Profile" description="How you appear inside UNBOUND.">
             <p className="mb-4 text-sm text-muted-foreground">
               Signed in as <span className="text-foreground">{user.email ?? "—"}</span>

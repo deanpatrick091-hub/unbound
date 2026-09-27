@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { ModelOption } from "@/lib/ai/types";
 
@@ -53,11 +53,26 @@ interface ShellProviderProps {
 
 export function ShellProvider({
   user,
-  models,
+  models: initialModels,
   initialConversations,
   initialCouncilSessions,
   children,
 }: ShellProviderProps) {
+  const [models, setModels] = useState(initialModels);
+  useEffect(() => {
+    const refresh = async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const res = await fetch("/api/models", { cache: "no-store" });
+        if (!res.ok) return;
+        const body = await res.json() as { models?: ModelOption[] };
+        if (Array.isArray(body.models)) setModels(body.models);
+      } catch { /* Keep the current catalog until connectivity recovers. */ }
+    };
+    window.addEventListener("focus", refresh);
+    const timer = setInterval(refresh, 60_000);
+    return () => { window.removeEventListener("focus", refresh); clearInterval(timer); };
+  }, []);
   const [conversations, setConversations] = useState(initialConversations);
   const [councilSessions, setCouncilSessions] = useState(initialCouncilSessions);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);

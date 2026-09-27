@@ -6,7 +6,7 @@ import type { ChatErrorCode, TokenUsage } from "@/lib/chat/types";
 
 /**
  * Streaming client for the OpenAI-compatible chat completions protocol, which
- * Groq, Cerebras and OpenRouter all implement. Yields the
+ * Groq, Cloudflare, OpenRouter and Ollama all implement. Yields the
  * same GenerationEvents as the Gemini adapter so callers don't care which
  * provider answered.
  */
@@ -16,7 +16,7 @@ const DEFAULT_MAX_TOKENS = 4096;
 
 interface StreamChunk {
   choices?: Array<{
-    delta?: { content?: string | null };
+    delta?: { content?: string | Array<{ type?: string; text?: string }> | null };
     finish_reason?: string | null;
   }>;
   usage?: {
@@ -54,12 +54,13 @@ export async function* streamOpenAICompatible(
         ...turns.map((t) => ({ role: t.role, content: t.content })),
       ],
     };
+    if (config.zeroPriceOnly) body.provider = { max_price: { prompt: 0, completion: 0, request: 0, image: 0 }, allow_fallbacks: true };
     if (temperature !== undefined) body.temperature = temperature;
     if (config.supportsStreamUsage) body.stream_options = { include_usage: true };
     return JSON.stringify(body);
   };
 
-  let maxTokens = Math.min(options.maxTokens ?? DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS);
+  let maxTokens = Math.max(1, Math.min(options.maxTokens ?? DEFAULT_MAX_TOKENS, 16_384));
   let response: Response;
 
   // One request, plus at most one retry when the provider tells us the
@@ -77,11 +78,11 @@ export async function* streamOpenAICompatible(
         yield { type: "error", code: "aborted", message: "The request was cancelled." };
         return;
       }
-      console.error(`[${providerLabel}] request failed:`, error);
+      console.error(`[${providerLabel}] request failed`);
       yield {
         type: "error",
         code: "network_error",
-        message: `Could not reach ${providerLabel}. Please try again.`,
+        message: `Could not reach ${providerLabel}. ${providerLabel === "Ollama (local)" ? "Is Ollama running?" : "Please try again."}`,
       };
       return;
     }
@@ -102,11 +103,9 @@ export async function* streamOpenAICompatible(
     if (response.status === 429 && waitMs !== null && waitMs <= MAX_AUTO_WAIT_MS && !signal?.aborted) {
       console.warn(`[${providerLabel}] rate-limited; retrying ${model} in ${Math.ceil(waitMs / 1000)}s`);
       await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, waitMs);
-        signal?.addEventListener("abort", () => {
-          clearTimeout(timer);
-          resolve();
-        }, { once: true });
+        const finish = () => { clearTimeout(timer); signal?.removeEventListener("abort", finish); resolve(); };
+        const timer = setTimeout(finish, waitMs);
+        signal?.addEventListener("abort", finish, { once: true });
       });
       if (signal?.aborted) {
         yield { type: "error", code: "aborted", message: "The request was cancelled." };
@@ -114,6 +113,8 @@ export async function* streamOpenAICompatible(
       }
       continue;
     }
+
+    if (response.status === 402 && config.zeroPriceOnly) options.onModelRestricted?.("Not available at zero cost");
 
     // The provider says the model is gone: refresh the picker on the next render.
     if (response.status === 404 && options.onModelUnavailable) options.onModelUnavailable();
@@ -137,31 +138,37 @@ export async function* streamOpenAICompatible(
   }
 
   let usage: TokenUsage | undefined;
+  let completed = false;
 
   try {
     for await (const data of readSse(response.body as ReadableStream<Uint8Array>)) {
-      if (data === "[DONE]") break;
+      if (data === "[DONE]") { completed = true; break; }
 
       let chunk: StreamChunk;
       try {
         chunk = JSON.parse(data) as StreamChunk;
       } catch {
-        continue; // keep-alive or malformed line
+        yield { type: "error", code: "upstream_error", message: "The provider returned an unreadable response. Please try again." };
+        return;
       }
 
       if (chunk.error) {
-        const reason = providerReason(JSON.stringify(chunk.error));
         yield {
           type: "error",
-          code: "upstream_error",
-          message: `${providerLabel} returned an error mid-stream${reason ? `: ${reason}` : ""}. Please try again.`,
+          ...mapHttpError(Number(chunk.error.code) || 500, providerLabel, model, JSON.stringify({ error: chunk.error })),
         };
         return;
       }
 
       const choice = chunk.choices?.[0];
-      const text = choice?.delta?.content;
+      if (choice?.finish_reason) completed = true;
+      const content = choice?.delta?.content;
+      const text = typeof content === "string" ? content : Array.isArray(content) ? content.filter(part => part.type === "text" && typeof part.text === "string").map(part => part.text).join("") : "";
       if (text) yield { type: "text", text };
+      if (choice?.finish_reason === "length") {
+        yield { type: "error", code: "upstream_error", message: "The model reached its response limit. Ask for a shorter answer or continue from the last section." };
+        return;
+      }
 
       if (chunk.usage) {
         usage = {
@@ -187,35 +194,47 @@ export async function* streamOpenAICompatible(
       yield { type: "error", code: "aborted", message: "The request was cancelled." };
       return;
     }
-    console.error(`[${providerLabel}] stream read failed:`, error);
+    console.error(`[${providerLabel}] stream read failed`);
     yield { type: "error", code: "network_error", message: `The connection to ${providerLabel} was interrupted.` };
     return;
   }
 
+  if (!completed) {
+    yield { type: "error", code: "network_error", message: "The response ended early. Please retry to get the full answer." };
+    return;
+  }
   yield { type: "done", usage };
 }
 
-/** Yields the `data:` payload of each SSE event. */
+/** Assemble SSE events across arbitrary transport chunks, including CRLF and multiline data. */
 async function* readSse(body: ReadableStream<Uint8Array>): AsyncGenerator<string, void, undefined> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let lines: string[] = [];
+  let eventSize = 0;
   try {
     while (true) {
       const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
+      buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+      if (buffer.length + eventSize > 1_000_000) throw new Error("Oversized SSE event");
       let boundary: number;
       while ((boundary = buffer.indexOf("\n")) !== -1) {
         const line = buffer.slice(0, boundary).replace(/\r$/, "");
         buffer = buffer.slice(boundary + 1);
-        if (line.startsWith("data:")) yield line.slice(5).trim();
+        if (!line) {
+          if (lines.length) yield lines.join("\n");
+          lines = []; eventSize = 0;
+        } else if (line.startsWith("data:")) {
+          const data = line.slice(5).replace(/^ /, "");
+          lines.push(data); eventSize += data.length;
+        }
       }
+      if (done) break;
     }
-    const tail = buffer.trim();
-    if (tail.startsWith("data:")) yield tail.slice(5).trim();
+    // An event lacking its final blank line is incomplete and must not be trusted.
   } finally {
+    await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
 }
@@ -287,6 +306,9 @@ function providerReason(detail: string): string {
   } catch {
     message = detail;
   }
+  for (const [key, value] of Object.entries(process.env)) {
+    if (/(?:_KEY|_TOKEN)$/.test(key) && value && value.length > 6) message = message.split(value).join("[redacted]");
+  }
   return message
     .replace(/https?:\/\/\S+/g, "")
     .replace(/\b(org|user|proj|sk|key)[_-][A-Za-z0-9_-]{6,}\b/g, "")
@@ -311,8 +333,8 @@ function mapHttpError(
       return { code: "upstream_error", message: `${providerLabel} rejected the server's API key${suffix}.` };
     case 402:
       return {
-        code: "upstream_error",
-        message: `${providerLabel} needs credits for ${model}${suffix}. Pick a free model.`,
+        code: "quota_exhausted",
+        message: `${providerLabel}'s free allowance is unavailable or exhausted. Wait for it to reset or choose another connected free provider. No paid fallback will be used.`,
       };
     case 404:
       return {
@@ -331,7 +353,7 @@ function mapHttpError(
       if (isDailyQuota(reason)) {
         return {
           code: "quota_exhausted",
-          message: `${providerLabel}: the daily free quota for this account is used up${suffix}. It resets at 00:00 UTC — add credits to raise it, or use another provider for now.`,
+          message: `${providerLabel}: the daily free quota for this account is used up${suffix}. Wait for the provider to reset it, or choose another connected free provider. No paid fallback will be used.`,
         };
       }
       return {

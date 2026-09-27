@@ -1,4 +1,5 @@
-﻿import type { NextRequest } from "next/server";
+import { getAvailableModel } from "@/lib/ai/discovery";
+import type { NextRequest } from "next/server";
 
 import { errorResponse, limitResponse, NDJSON_HEADERS } from "@/lib/api/responses";
 import { getSession } from "@/lib/auth/session";
@@ -21,7 +22,7 @@ import { isProviderEnabled, providerNotConfiguredMessage } from "@/lib/ai/provid
 import { consumeRequest } from "@/lib/limits/consume";
 
 // Gemini responses can run longer than the default serverless timeout.
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 /**
  * POST /api/chat
@@ -67,6 +68,10 @@ export async function POST(request: NextRequest): Promise<Response> {
   const { provider } = parseModelId(model);
   if (!isProviderEnabled(provider)) {
     return errorResponse(400, "not_configured", providerNotConfiguredMessage(provider));
+  }
+
+  if (!(await getAvailableModel(model))) {
+    return errorResponse(400, "invalid_request", "This model is not in the current free model library. Choose another model.");
   }
 
   // Usage protection — server-side and atomic when available. An unreachable
@@ -172,7 +177,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           model,
           systemInstruction: CHAT_SYSTEM_INSTRUCTION,
           turns,
-          signal: abort.signal,
+          signal: AbortSignal.any([abort.signal, request.signal]),
         })) {
           if (event.type === "text") {
             text += event.text;

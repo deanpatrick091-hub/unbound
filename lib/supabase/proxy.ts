@@ -45,6 +45,10 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   const isAuthenticated = Boolean(data?.claims);
 
   const { pathname } = request.nextUrl;
+  const withCookies = (next: NextResponse) => {
+    response.cookies.getAll().forEach(cookie => next.cookies.set(cookie));
+    return next;
+  };
 
   if (!isAuthenticated && !matchesPrefix(pathname, PUBLIC_PATHS)) {
     if (pathname.startsWith("/api/")) {
@@ -57,14 +61,14 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     loginUrl.pathname = "/login";
     loginUrl.search = "";
     if (pathname !== "/") loginUrl.searchParams.set("next", pathname);
-    return NextResponse.redirect(loginUrl);
+    return withCookies(NextResponse.redirect(loginUrl));
   }
 
   if (isAuthenticated && matchesPrefix(pathname, AUTH_ONLY_PATHS)) {
     const homeUrl = request.nextUrl.clone();
     homeUrl.pathname = "/";
     homeUrl.search = "";
-    return NextResponse.redirect(homeUrl);
+    return withCookies(NextResponse.redirect(homeUrl));
   }
 
   // Return the response that carries any refreshed cookies. Creating a new

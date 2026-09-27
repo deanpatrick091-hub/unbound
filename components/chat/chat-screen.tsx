@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { AlertCircle, CloudOff, RotateCcw, X } from "lucide-react";
+import { AlertCircle, ArrowUpRight, CloudOff, Lightbulb, PenLine, RotateCcw, X, Zap } from "lucide-react";
 
 import { Composer } from "@/components/chat/composer";
 import { MessageList } from "@/components/chat/message-list";
@@ -40,7 +40,7 @@ export function ChatScreen({ conversationId, title, initialMessages, model }: Ch
   const chat = useChat({
     conversationId,
     initialMessages,
-    model,
+    model: models.some(m => m.id === model) ? model : models[0]?.id ?? model,
     onConversationCreated,
     onTurnComplete: refreshConversations,
   });
@@ -50,7 +50,7 @@ export function ChatScreen({ conversationId, title, initialMessages, model }: Ch
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="hidden h-14 shrink-0 items-center justify-between border-b px-6 lg:flex">
+      <div className="flex h-12 shrink-0 items-center justify-between gap-3 px-5 sm:px-7">
         <h1 className="truncate text-sm font-medium text-foreground">{activeTitle ?? "New chat"}</h1>
         <span className="truncate text-xs text-subtle" title={`${described.providerLabel} · ${described.label}`}>
           <span className="text-muted-foreground">{described.providerLabel}</span> · {described.label}
@@ -60,7 +60,7 @@ export function ChatScreen({ conversationId, title, initialMessages, model }: Ch
       <MessageList
         messages={chat.messages}
         isBusy={chat.isBusy}
-        emptyState={<EmptyState name={user.displayName} />}
+        emptyState={<EmptyState name={user.displayName} disabled={chat.isBusy || !models.length} onPrompt={text => void chat.sendMessage(text)} />}
       />
 
       <p role="status" className="sr-only">
@@ -121,17 +121,15 @@ export function ChatScreen({ conversationId, title, initialMessages, model }: Ch
   );
 }
 
-function EmptyState({ name }: { name: string | null }) {
+function EmptyState({ name, onPrompt, disabled }: { name: string | null; onPrompt: (text: string) => void; disabled: boolean }) {
   const first = name?.trim().split(/\s+/)[0];
-  return (
-    <div className="max-w-md text-center animate-rise-in">
-      <p className="text-[11px] font-medium uppercase tracking-[0.3em] text-subtle">UNBOUND</p>
-      <h2 className="mt-4 text-2xl font-medium tracking-tight text-foreground sm:text-[28px]">
-        {first ? `What are we working on, ${first}?` : "What are we working on?"}
-      </h2>
-      <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-        Ask a question, draft something, or think a problem through. For hard calls, convene the Council.
-      </p>
+  return <div className="w-full max-w-2xl py-10 animate-rise-in">
+    <span className="brand-mark mb-7"><Zap size={22} strokeWidth={1.3} /></span>
+    <p className="text-sm text-muted-foreground">{first ? "Hello, " + first + "." : "A fresh start."}</p>
+    <h2 className="mt-3 text-4xl font-medium leading-[1.13] tracking-[-0.045em] sm:text-5xl">Where will your<br /><span className="text-brand">mind go today?</span></h2>
+    <p className="mt-5 max-w-md text-base leading-relaxed text-muted-foreground">An idea, a question, a blank page. Start anywhere.</p>
+    <div className="mt-9 grid gap-3 sm:grid-cols-3">
+      {[{ icon: Lightbulb, title: "Find an idea", text: "Help me brainstorm a useful project I could build this weekend. Ask about my interests first." }, { icon: PenLine, title: "Make it clearer", text: "Help me improve something I have written. Ask me to paste the text and tell you who it is for." }, { icon: Zap, title: "Think it through", text: "Help me work through a decision. Ask me what I am deciding and what matters most." }].map(item => <button key={item.title} type="button" className="prompt-card disabled:opacity-50" disabled={disabled} onClick={() => onPrompt(item.text)}><item.icon size={20} className="mb-5 text-brand" /><span className="flex items-center justify-between gap-2 text-sm">{item.title}<ArrowUpRight size={15} /></span></button>)}
     </div>
-  );
+  </div>;
 }
