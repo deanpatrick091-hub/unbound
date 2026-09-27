@@ -6,7 +6,7 @@ import type { ChatErrorCode, TokenUsage } from "@/lib/chat/types";
 
 /**
  * Streaming client for the OpenAI-compatible chat completions protocol, which
- * Groq, Cerebras, OpenRouter and Ollama all implement. Yields the
+ * Groq, Cerebras and OpenRouter all implement. Yields the
  * same GenerationEvents as the Gemini adapter so callers don't care which
  * provider answered.
  */
@@ -81,7 +81,7 @@ export async function* streamOpenAICompatible(
       yield {
         type: "error",
         code: "network_error",
-        message: `Could not reach ${providerLabel}. ${providerLabel === "Ollama (local)" ? "Is Ollama running?" : "Please try again."}`,
+        message: `Could not reach ${providerLabel}. Please try again.`,
       };
       return;
     }

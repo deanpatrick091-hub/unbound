@@ -36,13 +36,13 @@ Next.js 16 · React 19 · TypeScript · Tailwind CSS v4 · shadcn/ui · Lucide �
 
 | Variable | Required | Description |
 | --- | --- | --- |
+| `NEXT_PUBLIC_SITE_URL` | Yes | Canonical site URL, e.g. `https://unbound-lilac.vercel.app`. Every absolute link (auth emails, attribution) is built from it. On Vercel it falls back to `VERCEL_PROJECT_PRODUCTION_URL`. |
 | `GEMINI_API_KEY` | Yes | Google Gemini. **Server-only**; never exposed to the browser. |
 | `GEMINI_MODEL` | No | Default model as `provider:model` (default `gemini:gemini-3.6-flash`). |
 | `GROQ_API_KEY` | No | Enables Groq. Models discovered live from `/models`. |
 | `CEREBRAS_API_KEY` | No | Enables Cerebras (OpenAI-compatible). Models discovered live from `/v1/models`. |
 | `OPENROUTER_API_KEY` | No | Enables OpenRouter (curated `:free` models in `lib/ai/models.ts`). |
 | `OPENROUTER_SITE_URL`, `OPENROUTER_APP_NAME` | No | Optional OpenRouter attribution headers. |
-| `OLLAMA_BASE_URL` | No | Enables Ollama, e.g. `http://localhost:11434`; models discovered from `/api/tags`. |
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL (public). |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes | Supabase publishable key (public by design; RLS protects data). |
 
@@ -52,11 +52,11 @@ model ids and labels, never keys. The Supabase **service-role** key is never use
 ## AI providers
 
 `lib/ai/` is the provider layer. Model ids are `provider:model` (bare ids are treated as
-Gemini for backward compatibility). Gemini uses its native SDK; Groq, Cerebras, OpenRouter
-and Ollama share one OpenAI-compatible streaming client. The chat composer and Settings
+Gemini for backward compatibility). Gemini uses its native SDK; Groq, Cerebras and
+OpenRouter share one OpenAI-compatible streaming client. The chat composer and Settings
 show only providers whose keys are configured.
 
-Model lists for **Groq, Cerebras, OpenRouter and Ollama are discovered live** from each
+Model lists for **Groq, Cerebras and OpenRouter are discovered live** from each
 provider's model API (filtered to active, text-in/text-out chat models; OpenRouter to
 free-priced models plus the `openrouter/free` router) and cached for five minutes, so no ids
 are hard-coded for them. Gemini uses the curated `MODEL_CATALOG` in `lib/ai/models.ts`.
@@ -91,8 +91,9 @@ live in `lib/limits/config.ts`.
 
 ### Auth configuration (Supabase Dashboard → Authentication)
 
-- **URL Configuration → Redirect URLs:** add `http://localhost:3000/**` (and your
-  production origin later).
+- **URL Configuration → Site URL:** `https://unbound-lilac.vercel.app`
+- **URL Configuration → Redirect URLs:** add `https://unbound-lilac.vercel.app/**`.
+  This must match `NEXT_PUBLIC_SITE_URL`, or Supabase will reject the redirect.
 - **Email Templates** (recommended): point links at `/auth/confirm` with a token hash so
   they work from any device:
   - Confirm signup: `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`

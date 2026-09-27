@@ -40,8 +40,8 @@ function option(provider: ProviderId, model: string, label: string, description?
 
 /**
  * Curated catalog — only for providers without a usable discovery endpoint.
- * Groq, Cerebras, OpenRouter and Ollama are discovered live from their own
- * model APIs (see lib/ai/discovery.ts) so their ids are never hard-coded here.
+ * Groq, Cerebras and OpenRouter are discovered live from their own model APIs
+ * (see lib/ai/discovery.ts) so their ids are never hard-coded here.
  *
  * Gemini: verified against the free tier (the Pro preview has zero free quota
  * and is deliberately omitted).
@@ -59,7 +59,7 @@ export function findModel(id: string, models: readonly ModelOption[] = MODEL_CAT
   return models.find((m) => m.id === qualified);
 }
 
-/** Human label for any id, even one not in the catalog (e.g. a local Ollama tag). */
+/** Human label for any id, even one the live catalogue no longer lists. */
 export function describeModel(id: string, models: readonly ModelOption[] = MODEL_CATALOG): {
   provider: ProviderId;
   providerLabel: string;

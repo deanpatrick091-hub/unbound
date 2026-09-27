@@ -8,8 +8,8 @@ import type { ModelOption, ProviderId } from "@/lib/ai/types";
 /**
  * Builds the list of models the current server can actually serve.
  *
- * Groq, Cerebras, OpenRouter and Ollama are discovered live from the providers'
- * own model endpoints and filtered structurally (modalities, pricing, activity),
+ * Groq, Cerebras and OpenRouter are discovered live from the providers' own
+ * model endpoints and filtered structurally (modalities, pricing, activity),
  * so nothing here depends on remembering model ids. Gemini uses the curated
  * catalog. Results are cached in-process briefly so the app layout stays fast;
  * a failed discovery falls back to the last good list.
@@ -64,9 +64,7 @@ async function modelsFor(provider: ProviderId): Promise<ModelOption[]> {
         ? await discoverGroq()
         : provider === "cerebras"
           ? await discoverCerebras()
-          : provider === "openrouter"
-            ? await discoverOpenRouter()
-            : await discoverOllama();
+          : await discoverOpenRouter();
     cache.set(provider, { expires: Date.now() + CACHE_TTL_MS, models });
     return models;
   } catch (error) {
@@ -231,19 +229,4 @@ async function discoverOpenRouter(): Promise<ModelOption[]> {
     .sort((a, b) => a.label.localeCompare(b.label));
 
   return [openRouterRouterOption(router?.context_length ?? 200_000), ...rest];
-}
-
-// ---------------------------------------------------------------------------
-// Ollama — {OLLAMA_BASE_URL}/api/tags (local)
-// ---------------------------------------------------------------------------
-
-async function discoverOllama(): Promise<ModelOption[]> {
-  const config = getProviderConfig("ollama");
-  if (!config || config.kind !== "openai-compatible") return [];
-  const root = config.baseUrl.replace(/\/v1$/, "");
-  const body = (await fetchJson(`${root}/api/tags`, {})) as { models?: Array<{ name?: string }> };
-  return (body.models ?? [])
-    .filter((m): m is { name: string } => typeof m.name === "string")
-    .map((m) => ({ id: `ollama:${m.name}`, provider: "ollama" as const, model: m.name, label: m.name }))
-    .sort((a, b) => a.label.localeCompare(b.label));
 }

@@ -1,13 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { safeNextPath } from "@/lib/auth/redirect";
 import { getSession } from "@/lib/auth/session";
 import { upsertPreferences, upsertProfile } from "@/lib/data/account";
 import { isAllowedModel } from "@/lib/gemini/models";
+import { siteUrl } from "@/lib/site-url";
 import { createClient } from "@/lib/supabase/server";
 
 export interface AuthActionState {
@@ -34,11 +34,6 @@ function readNewPassword(formData: FormData, field = "password"): string | { err
     return { error: `Password must be at most ${MAX_PASSWORD_LENGTH} characters.` };
   }
   return password;
-}
-
-async function requestOrigin(): Promise<string> {
-  const h = await headers();
-  return h.get("origin") ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host") ?? "localhost:3000"}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -72,7 +67,7 @@ export async function signup(_prev: AuthActionState, formData: FormData): Promis
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { emailRedirectTo: `${await requestOrigin()}/auth/confirm` },
+    options: { emailRedirectTo: siteUrl("/auth/confirm") },
   });
   if (error) return { error: error.message };
 
@@ -107,7 +102,7 @@ export async function requestPasswordReset(
 
   const supabase = await createClient();
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${await requestOrigin()}/auth/confirm?next=/reset-password`,
+    redirectTo: siteUrl("/auth/confirm?next=/reset-password"),
   });
   if (error) {
     // Rate limits are the only error worth surfacing; everything else stays

@@ -65,16 +65,6 @@ export function getProviderConfig(provider: ProviderId): ProviderConfig | null {
       };
     }
 
-    case "ollama": {
-      const base = env("OLLAMA_BASE_URL");
-      if (!base) return null;
-      return {
-        kind: "openai-compatible",
-        baseUrl: `${base.replace(/\/+$/, "")}/v1`,
-        apiKey: null,
-        supportsStreamUsage: true,
-      };
-    }
   }
 }
 
@@ -92,7 +82,6 @@ export function providerNotConfiguredMessage(provider: ProviderId): string {
     groq: "GROQ_API_KEY",
     cerebras: "CEREBRAS_API_KEY",
     openrouter: "OPENROUTER_API_KEY",
-    ollama: "OLLAMA_BASE_URL",
   };
   return `${PROVIDER_LABELS[provider]} isn't configured on the server. Set ${envVar[provider]}.`;
 }
