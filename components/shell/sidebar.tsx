@@ -1,11 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Boxes, Hammer, Image as ImageIcon, MessageSquare, Plus, Settings, Users } from "lucide-react";
 
-import { SignOutButton } from "@/components/auth/sign-out-button";
 import { ConversationItem } from "@/components/shell/conversation-item";
 import { CouncilItem } from "@/components/shell/council-item";
 import { useShell } from "@/components/shell/shell-context";
@@ -47,7 +46,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
 
       <div className="mt-5 grid grid-cols-1 gap-1.5 px-3 pb-3">
         <NavTile href="/" icon={Plus} label="New chat" active={pathname === "/" || pathname.startsWith("/c/")} onClick={onNavigate} />
-        <NavTile href="/models" icon={Boxes} label={"Models · " + models.length} active={pathname === "/models"} onClick={onNavigate} />
+        <NavTile href="/models" icon={Boxes} label={"Models Â· " + models.length} active={pathname === "/models"} onClick={onNavigate} />
         <NavTile href="/council" icon={Users} label="Council" active={area === "council"} onClick={onNavigate} />
         <NavTile href="/image-gen" icon={ImageIcon} label="Image Gen" active={area === "image"} onClick={onNavigate} />
         <NavTile href="/build" icon={Hammer} label="Build" active={area === "build"} onClick={onNavigate} />
@@ -125,7 +124,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           >
             <Settings className="size-4" />
           </Link>
-          <SignOutButton iconOnly />
         </div>
       </div>
     </nav>

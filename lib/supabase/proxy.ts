@@ -3,20 +3,18 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getSupabaseEnv } from "@/lib/supabase/env";
 
-/** Routes reachable without a session. Everything else requires login. */
-const PUBLIC_PATHS = ["/login", "/signup", "/forgot-password", "/auth"];
-
-/** Routes a signed-in user should be bounced away from (back to the app). */
-const AUTH_ONLY_PATHS = ["/login", "/signup", "/forgot-password"];
-
-function matchesPrefix(pathname: string, prefixes: string[]): boolean {
-  return prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-}
-
 /**
- * Refreshes the Supabase session cookie on every matched request and enforces
- * the app's auth boundary. Must run before any Server Component renders so
- * that refreshed tokens are available to them and written back to the browser.
+ * Keeps every visitor signed in — silently.
+ *
+ * UNBOUND has no login. Instead, the first request from a new browser creates
+ * an anonymous Supabase user and stores its session in cookies, so the app is
+ * usable immediately with nothing to fill in. That anonymous user is still a
+ * real `auth.uid()`, which is what every Row Level Security policy and the
+ * `consume_request()` rate limiter key off: conversations stay private to the
+ * browser that created them, and per-user usage limits still apply.
+ *
+ * Must run before any Server Component renders so the session cookie exists
+ * for them and is written back to the browser.
  */
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
   let response = NextResponse.next({ request });
@@ -42,36 +40,20 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   // IMPORTANT: do not put logic between createServerClient and getClaims().
   // getClaims() verifies the JWT signature and triggers the token refresh.
   const { data } = await supabase.auth.getClaims();
-  const isAuthenticated = Boolean(data?.claims);
 
-  const { pathname } = request.nextUrl;
-  const withCookies = (next: NextResponse) => {
-    response.cookies.getAll().forEach(cookie => next.cookies.set(cookie));
-    return next;
-  };
-
-  if (!isAuthenticated && !matchesPrefix(pathname, PUBLIC_PATHS)) {
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json(
-        { error: { code: "unauthorized", message: "Sign in to continue." } },
-        { status: 401 },
-      );
+  if (!data?.claims) {
+    // No session yet (or it expired): mint an anonymous one. signInAnonymously
+    // writes its cookies through setAll above, so `response` carries them.
+    const { error } = await supabase.auth.signInAnonymously();
+    if (error) {
+      // Anonymous sign-ins disabled in the project, or Supabase unreachable.
+      // Let the request through; pages and routes degrade on their own rather
+      // than trapping the visitor on an error screen.
+      console.error("[auth] anonymous sign-in failed:", error.message);
     }
-    const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = "/login";
-    loginUrl.search = "";
-    if (pathname !== "/") loginUrl.searchParams.set("next", pathname);
-    return withCookies(NextResponse.redirect(loginUrl));
   }
 
-  if (isAuthenticated && matchesPrefix(pathname, AUTH_ONLY_PATHS)) {
-    const homeUrl = request.nextUrl.clone();
-    homeUrl.pathname = "/";
-    homeUrl.search = "";
-    return withCookies(NextResponse.redirect(homeUrl));
-  }
-
-  // Return the response that carries any refreshed cookies. Creating a new
-  // response here would drop them and cause random sign-outs.
+  // Return the response that carries any new or refreshed cookies. Creating a
+  // new response here would drop them and cause a fresh user on every request.
   return response;
 }

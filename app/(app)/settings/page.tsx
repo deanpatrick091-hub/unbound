@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 
-import { SignOutButton } from "@/components/auth/sign-out-button";
-import { PasswordForm, PreferencesForm, ProfileForm } from "@/components/settings/settings-forms";
+import { PreferencesForm, ProfileForm } from "@/components/settings/settings-forms";
 import { UsagePanel } from "@/components/settings/usage-panel";
 import { AppearanceControls } from "@/components/appearance/appearance";
 import { getAvailableModels } from "@/lib/ai/discovery";
@@ -13,8 +11,9 @@ import { getPreferences, getProfile, getUsageSummary } from "@/lib/data/account"
 export const metadata: Metadata = { title: "Settings · UNBOUND" };
 
 export default async function SettingsPage() {
+  // The proxy guarantees an (anonymous) session before this renders.
   const { supabase, user } = await getSession();
-  if (!user) redirect("/login");
+  if (!user) return <SessionUnavailable />;
 
   const [profile, prefs, usage, models] = await Promise.all([
     getProfile(supabase, user.id).catch(() => null),
@@ -36,9 +35,6 @@ export default async function SettingsPage() {
             <AppearanceControls />
           </Section>
           <Section title="Profile" description="How you appear inside UNBOUND.">
-            <p className="mb-4 text-sm text-muted-foreground">
-              Signed in as <span className="text-foreground">{user.email ?? "—"}</span>
-            </p>
             <ProfileForm displayName={profile?.display_name ?? null} />
           </Section>
 
@@ -50,15 +46,26 @@ export default async function SettingsPage() {
             <UsagePanel usage={usage} />
           </Section>
 
-          <Section title="Password" description="Choose a new password for your account.">
-            <PasswordForm />
-          </Section>
-
-          <Section title="Session" description="Sign out on this device.">
-            <SignOutButton className="h-9 rounded-md border border-border-strong px-4 text-foreground" />
+          <Section title="This browser" description="How your workspace is kept.">
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              UNBOUND has no accounts. Your conversations, Council sessions and preferences are tied
+              to this browser and are not visible to anyone else. Clearing site data starts a fresh,
+              empty workspace.
+            </p>
           </Section>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Shown only if the anonymous session could not be created (Supabase unreachable). */
+function SessionUnavailable() {
+  return (
+    <div className="flex flex-1 items-center justify-center px-6">
+      <p className="max-w-sm text-center text-sm text-muted-foreground">
+        Your workspace isn&apos;t available right now. Reload the page to try again.
+      </p>
     </div>
   );
 }

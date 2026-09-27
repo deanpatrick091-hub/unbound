@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 
 import { ChatScreen } from "@/components/chat/chat-screen";
 import { getSession } from "@/lib/auth/session";
@@ -7,7 +6,7 @@ import { getAvailableModel } from "@/lib/ai/discovery";
 
 export default async function NewChatPage({ searchParams }: PageProps<"/">) {
   const { supabase, user } = await getSession();
-  if (!user) redirect("/login");
+  if (!user) throw new Error("Workspace session unavailable.");
 
   const params = await searchParams;
   const chosen = typeof params.model === "string" ? await getAvailableModel(params.model) : undefined;
