@@ -132,7 +132,7 @@ export function Composer({
           </div>
         </div>
       </div>
-      <p id={hintId} className="mt-2 text-center text-[11px] text-subtle">
+      <p id={hintId} className="composer-hint mx-auto mt-2 w-fit rounded-full px-3 py-1 text-center text-[11px] text-subtle">
         {isTooLong ? (
           <span className="text-destructive" role="alert">
             Message is too long ({trimmed.length.toLocaleString()} / {maxLength.toLocaleString()} characters).

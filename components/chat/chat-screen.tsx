@@ -50,7 +50,7 @@ export function ChatScreen({ conversationId, title, initialMessages, model }: Ch
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-12 shrink-0 items-center justify-between gap-3 px-5 sm:px-7">
+      <div className="chat-heading flex h-12 shrink-0 items-center justify-between gap-3 px-5 sm:px-7">
         <h1 className="truncate text-sm font-medium text-foreground">{activeTitle ?? "New chat"}</h1>
         <span className="truncate text-xs text-subtle" title={`${described.providerLabel} · ${described.label}`}>
           <span className="text-muted-foreground">{described.providerLabel}</span> · {described.label}
