@@ -7,7 +7,7 @@ import { ThemeToggle } from "./theme-toggle";
 
 type Preset = "aurora" | "midnight" | "silver" | "custom";
 type Appearance = { preset: Preset; image?: string; dim: number };
-const DEFAULT: Appearance = { preset: "aurora", dim: 35 };
+const DEFAULT: Appearance = { preset: "midnight", dim: 35 };
 const EMPTY = JSON.stringify(DEFAULT);
 const Context = createContext<{ value: Appearance; save: (value: Appearance) => void } | null>(null);
 function subscribe(listener: () => void) {
@@ -65,7 +65,7 @@ async function prepareImage(file: File): Promise<string> {
     canvas.height = Math.max(1, Math.round(bitmap.height * scale));
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Your browser could not open this image.");
-    ctx.fillStyle = "#101726";
+    ctx.fillStyle = "#111111";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     const data = canvas.toDataURL("image/jpeg", 0.8);
@@ -92,7 +92,7 @@ export function AppearanceControls() {
           className="group text-left">
           <span className={"relative mb-2 block h-20 rounded-2xl border border-border-strong wallpaper-" + preset}>
             {value.preset === preset && <span className="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground"><Check size={14} /></span>}
-          </span><span className="text-sm capitalize">{preset}</span>
+          </span><span className="text-sm">{{ aurora: "Soft", midnight: "Pure", silver: "Silver" }[preset]}</span>
         </button>)}
       </div>
     </div>
@@ -115,11 +115,11 @@ export function AppearanceControls() {
       <button type="button" className="flex items-center gap-2 text-muted-foreground" onClick={() => update({ preset: "aurora", dim: value.dim })}><Trash2 size={15} />Remove upload</button>
     </div>}
     <div>
-      <label htmlFor={id + "-dim"} className="flex justify-between text-sm">Background softness<span>{value.dim}%</span></label>
+      <label htmlFor={id + "-dim"} className="flex justify-between text-sm">Wallpaper fade<span>{value.dim}%</span></label>
       <input id={id + "-dim"} type="range" min="0" max="85" step="5" value={value.dim}
         onChange={event => update({ ...value, dim: Number(event.target.value) })} className="mt-3 w-full accent-[var(--brand)]" />
     </div>
-    <p className="text-xs leading-relaxed text-muted-foreground">JPG, PNG or WebP, up to 8 MB. Your wallpaper stays in this browser, separately for your account.</p>
+    <p className="text-xs leading-relaxed text-muted-foreground">JPG, PNG or WebP, up to 8 MB. Saved in this browser. Messages keep their own glass backdrop so answers stay readable at every fade level.</p>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
   </div>;
 }
