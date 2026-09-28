@@ -1,93 +1,81 @@
 import { FILE_END, FILE_START, isSiteFileName, type SiteFileName } from "@/lib/build/types";
 
-/**
- * Incremental parser for the model's output format:
- *
- *   free text (shown to the user)
- *   <<<FILE index.html>>>
- *   ...file content...
- *   <<<END>>>
- *
- * Feed chunks as they stream; it emits text pieces as soon as they are known
- * not to be part of a marker, and whole files as each block closes. Markers
- * are matched per line so a partial marker at the end of a chunk is held
- * back until the newline arrives.
- */
-
 export type ParsedPiece =
   | { kind: "text"; text: string }
   | { kind: "file_start"; name: SiteFileName }
   | { kind: "file"; name: SiteFileName; content: string };
 
+const FENCE_FILES: Record<string, SiteFileName> = {
+  html: "index.html", "index.html": "index.html",
+  css: "styles.css", "styles.css": "styles.css",
+  js: "script.js", javascript: "script.js", "script.js": "script.js",
+};
+
+/** Parse complete lines so tokens split across stream chunks cannot leak into
+ * chat. Accept our file protocol and ordinary fenced HTML/CSS/JS answers. */
 export class BuildOutputParser {
   private buffer = "";
   private currentFile: SiteFileName | null = null;
   private fileLines: string[] = [];
+  private fenced = false;
 
   push(chunk: string): ParsedPiece[] {
     this.buffer += chunk;
     const pieces: ParsedPiece[] = [];
-
     let newline: number;
     while ((newline = this.buffer.indexOf("\n")) !== -1) {
       const line = this.buffer.slice(0, newline);
       this.buffer = this.buffer.slice(newline + 1);
       pieces.push(...this.consumeLine(line, true));
     }
-
-    // Outside a file block, text that cannot be the start of a marker can be
-    // released immediately so the chat feels live.
-    if (!this.currentFile && this.buffer.length > 0 && !"<<<FILE".startsWith(this.buffer.slice(0, 7)) && !this.buffer.startsWith("<")) {
-      pieces.push({ kind: "text", text: this.buffer });
-      this.buffer = "";
-    }
-
     return pieces;
   }
 
-  /** Flush whatever is left at end of stream. */
   finish(): ParsedPiece[] {
     const pieces: ParsedPiece[] = [];
-    if (this.buffer.length > 0) {
-      pieces.push(...this.consumeLine(this.buffer, false));
-      this.buffer = "";
-    }
-    if (this.currentFile) {
-      // Unterminated block: keep what we have rather than dropping the file.
-      pieces.push({ kind: "file", name: this.currentFile, content: this.fileLines.join("\n") });
-      this.currentFile = null;
-      this.fileLines = [];
-    }
+    if (this.buffer.length > 0) pieces.push(...this.consumeLine(this.buffer, false));
+    this.buffer = "";
+    if (this.currentFile) pieces.push(this.closeFile());
     return pieces;
+  }
+
+  private closeFile(): ParsedPiece {
+    const piece: ParsedPiece = { kind: "file", name: this.currentFile!, content: this.fileLines.join("\n") };
+    this.currentFile = null;
+    this.fileLines = [];
+    this.fenced = false;
+    return piece;
   }
 
   private consumeLine(line: string, hadNewline: boolean): ParsedPiece[] {
-    const trimmed = line.replace(/\r$/, "");
+    const content = line.replace(/\r$/, "");
+    const marker = content.trim();
+    const start = marker.match(FILE_START);
+
+    // Some models wrap the custom protocol in a Markdown HTML fence.
+    if (start && isSiteFileName(start[1]) && (!this.currentFile || (this.fenced && this.fileLines.length === 0))) {
+      this.currentFile = start[1];
+      this.fileLines = [];
+      this.fenced = false;
+      return [{ kind: "file_start", name: start[1] }];
+    }
 
     if (this.currentFile) {
-      if (FILE_END.test(trimmed)) {
-        const piece: ParsedPiece = { kind: "file", name: this.currentFile, content: this.fileLines.join("\n") };
-        this.currentFile = null;
-        this.fileLines = [];
-        return [piece];
-      }
-      this.fileLines.push(trimmed);
+      if (FILE_END.test(marker) || (this.fenced && /^```\s*$/.test(marker))) return [this.closeFile()];
+      this.fileLines.push(content);
       return [];
     }
 
-    const start = trimmed.match(FILE_START);
-    if (start) {
-      const name = start[1];
-      if (isSiteFileName(name)) {
+    const fence = marker.match(/^```\s*([\w.-]*)\s*$/);
+    if (fence) {
+      const name = FENCE_FILES[fence[1].toLowerCase()];
+      if (name) {
         this.currentFile = name;
-        this.fileLines = [];
+        this.fenced = true;
         return [{ kind: "file_start", name }];
       }
-      // Unknown file name: treat the marker as text so nothing disappears.
+      return [];
     }
-
-    // Strip stray code fences the model might add around the whole answer.
-    if (/^```/.test(trimmed)) return [];
-    return trimmed.length > 0 || hadNewline ? [{ kind: "text", text: hadNewline ? `${trimmed}\n` : trimmed }] : [];
+    return content.length > 0 || hadNewline ? [{ kind: "text", text: hadNewline ? `${content}\n` : content }] : [];
   }
 }

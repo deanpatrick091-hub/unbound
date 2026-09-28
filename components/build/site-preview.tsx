@@ -45,7 +45,7 @@ export function SitePreview({ files, version, viewport, isBuilding }: SitePrevie
           <span className="mx-auto flex size-10 items-center justify-center rounded-full bg-raised text-muted-foreground">
             <Globe className="size-5" aria-hidden="true" />
           </span>
-          <p className="mt-4 text-sm font-medium">Your website will appear here</p>
+          <p className="mt-4 text-sm font-medium">{isBuilding ? "Building your website…" : "Your website will appear here"}</p>
           <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
             Describe what you want on the left — for example, “Build me a modern website for a restaurant.”
           </p>
@@ -55,7 +55,7 @@ export function SitePreview({ files, version, viewport, isBuilding }: SitePrevie
   }
 
   return (
-    <div className="scrollbar-thin flex h-full items-start justify-center overflow-auto bg-[oklch(0.1_0.004_285)] p-3 sm:p-5">
+    <div className="scrollbar-thin flex h-full items-start justify-center overflow-auto bg-surface p-3 sm:p-5">
       <div
         className={cn(
           "relative h-full overflow-hidden rounded-lg border bg-white shadow-[0_24px_60px_-24px_rgba(0,0,0,0.9)] transition-[width] duration-300",

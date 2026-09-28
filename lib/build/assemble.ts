@@ -59,20 +59,25 @@ export function assembleDocument(files: SiteFiles): string {
   // Inline local stylesheet links.
   html = html.replace(
     /<link\b[^>]*href=["'](?:\.\/)?styles\.css["'][^>]*>/gi,
-    css !== undefined ? `<style>\n${escapeStyle(css)}\n</style>` : "",
+    () => css !== undefined ? `<style>\n${escapeStyle(css)}\n</style>` : "",
   );
   // Inline local script tags (self-closing or with empty body).
   html = html.replace(
     /<script\b[^>]*src=["'](?:\.\/)?script\.js["'][^>]*>\s*<\/script>/gi,
-    js !== undefined ? `<script>\n${escapeScript(js)}\n</script>` : "",
+    (tag) => {
+      if (js === undefined) return "";
+      // Preserve module/Babel type when inlining the generated local asset.
+      const type = tag.match(/\btype=["'](module|text\/babel|text\/javascript)["']/i)?.[1];
+      return `<script${type ? ` type="${type}"` : ""}>\n${escapeScript(js)}\n</script>`;
+    },
   );
 
   // Append assets the page forgot to reference so nothing is silently lost.
   if (css !== undefined && !html.includes(escapeStyle(css))) {
-    html = html.replace(/<\/head>/i, `<style>\n${escapeStyle(css)}\n</style></head>`);
+    html = html.replace(/<\/head>/i, () => `<style>\n${escapeStyle(css)}\n</style></head>`);
   }
   if (js !== undefined && !html.includes(escapeScript(js))) {
-    html = html.replace(/<\/body>/i, `<script>\n${escapeScript(js)}\n</script></body>`);
+    html = html.replace(/<\/body>/i, () => `<script>\n${escapeScript(js)}\n</script></body>`);
   }
 
   // CSP and viewport go first in <head>; a generated <meta CSP> later in the

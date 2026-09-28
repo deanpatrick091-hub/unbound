@@ -189,10 +189,10 @@ export function useBuilder(options: { userId: string; model: string }) {
               fail({ code: event.code, message: event.message });
               return;
             case "done":
-              if (!receivedFile && Object.keys(filesRef.current).length === 0) {
+              if (!filesRef.current["index.html"]?.trim()) {
                 fail({
                   code: "upstream_error",
-                  message: "The model replied without producing any site files. Try rephrasing, e.g. “Build a website for …”.",
+                  message: "The model did not produce an HTML page to preview. Try another model or ask it to build a complete index.html page.",
                 });
                 return;
               }
@@ -205,7 +205,7 @@ export function useBuilder(options: { userId: string; model: string }) {
               );
               setStatus("idle");
               setWriting(null);
-              return;
+              return true;
           }
         }
         fail({ code: "network_error", message: "The connection was interrupted before the build finished." });

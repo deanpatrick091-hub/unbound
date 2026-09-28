@@ -27,7 +27,7 @@ type MobileTab = "chat" | "preview";
 
 /**
  * Split workspace: conversation on the left (~45%), live sandboxed preview
- * on the right (~55%). Below `lg` the two become tabs.
+ * on the right (~55%). Below `md` the two become tabs.
  */
 export function BuilderScreen({ model }: BuilderScreenProps) {
   const { user } = useShell();
@@ -36,12 +36,16 @@ export function BuilderScreen({ model }: BuilderScreenProps) {
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [mobileTab, setMobileTab] = useState<MobileTab>("chat");
 
+  async function sendAndPreview(text: string) {
+    if (await builder.send(text)) setMobileTab("preview");
+  }
+
   const previewVersion = builder.version * 1000 + refreshNonce;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Mobile: tab switcher */}
-      <div role="tablist" aria-label="Workspace" className="flex h-11 shrink-0 items-stretch border-b lg:hidden">
+      <div role="tablist" aria-label="Workspace" className="flex h-11 shrink-0 items-stretch border-b md:hidden">
         <MobileTabButton active={mobileTab === "chat"} onClick={() => setMobileTab("chat")} icon={MessageSquare}>
           Chat
         </MobileTabButton>
@@ -56,11 +60,11 @@ export function BuilderScreen({ model }: BuilderScreenProps) {
         <section
           aria-label="Builder conversation"
           className={cn(
-            "flex min-h-0 min-w-0 flex-col lg:flex lg:w-[45%] lg:border-r",
+            "flex min-h-0 min-w-0 flex-col md:flex md:w-[45%] md:border-r",
             mobileTab === "chat" ? "flex w-full" : "hidden",
           )}
         >
-          <div className="hidden h-12 shrink-0 items-center justify-between border-b px-4 lg:flex">
+          <div className="hidden h-12 shrink-0 items-center justify-between border-b px-4 md:flex">
             <h1 className="text-sm font-medium">Website builder</h1>
             <button
               type="button"
@@ -94,7 +98,7 @@ export function BuilderScreen({ model }: BuilderScreenProps) {
                       onClick={() => {
                         const last = [...builder.messages].reverse().find((m) => m.role === "user");
                         builder.clearError();
-                        if (last) void builder.send(last.content);
+                        if (last) void sendAndPreview(last.content);
                       }}
                       className="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium outline-none transition-colors hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-ring"
                     >
@@ -115,15 +119,16 @@ export function BuilderScreen({ model }: BuilderScreenProps) {
             </div>
           ) : null}
 
+          {builder.hasSite ? (
+            <button type="button" onClick={() => setMobileTab("preview")} className="mx-4 mb-2 flex items-center justify-center gap-2 rounded-lg border bg-raised px-3 py-2 text-sm md:hidden">
+              <Eye className="size-4" aria-hidden="true" /> View website preview
+            </button>
+          ) : null}
           <Composer
             isBusy={builder.isBusy}
             model={builder.model}
             onModelChange={builder.setModel}
-            onSend={(text) => {
-              void builder.send(text);
-              // On phones, jump to the preview so the user sees it build.
-              if (window.matchMedia("(max-width: 1023px)").matches) setMobileTab("preview");
-            }}
+            onSend={sendAndPreview}
             onStop={builder.stop}
             placeholder={builder.hasSite ? "Describe a change… e.g. “make the hero darker”" : "Describe the website you want…"}
             maxLength={BUILD_LIMITS.maxInstructionLength}
@@ -135,8 +140,12 @@ export function BuilderScreen({ model }: BuilderScreenProps) {
         {/* Right: preview (55%) */}
         <section
           aria-label="Website preview"
-          className={cn("min-h-0 min-w-0 flex-col lg:flex lg:w-[55%]", mobileTab === "preview" ? "flex w-full" : "hidden")}
+          className={cn("min-h-0 min-w-0 flex-col md:flex md:w-[55%]", mobileTab === "preview" ? "flex w-full" : "hidden")}
         >
+          <div className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+            <Eye className="size-4 text-muted-foreground" aria-hidden="true" />
+            <h2 className="text-sm font-medium">Live website preview</h2>
+          </div>
           <PreviewToolbar
             viewport={viewport}
             onViewportChange={setViewport}
