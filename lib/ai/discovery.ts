@@ -1,4 +1,5 @@
 import "server-only";
+import {ADDITIONAL_CHAT,isAdditionalChat} from "@/lib/ai/additional-chat";
 import { getModelHealth, isRestricted } from "@/lib/ai/health";
 import { CLOUDFLARE_FREE_MODELS, GEMINI_FREE_MODELS, GEMMA_FREE_MODELS, ZAI_FREE_MODELS, freeTierConfirmed, hasZeroPricing, RESTRICTED_MODEL_IDS } from "@/lib/ai/free-policy";
 import { getEnabledProviders, getProviderConfig } from "@/lib/ai/providers";
@@ -71,6 +72,7 @@ const NON_CHAT = /guard|safeguard|moderation|content-safety|embed|whisper|orpheu
 async function discover(provider: ProviderId): Promise<ModelOption[]> {
   const config = getProviderConfig(provider);
   if (!config) return [];
+  if(isAdditionalChat(provider))return ADDITIONAL_CHAT[provider].models.map(m=>({...option(provider,m),description:ADDITIONAL_CHAT[provider].allowance}));
   if (provider === "gemini") {
     const all: RemoteModel[] = [];
     let pageToken = "";

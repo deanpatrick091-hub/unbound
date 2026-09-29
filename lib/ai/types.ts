@@ -3,11 +3,14 @@
  */
 import type { ChatErrorCode, ChatRole, TokenUsage } from "@/lib/chat/types";
 
-export type ProviderId = "gemini" | "groq" | "cerebras" | "openrouter" | "cloudflare" | "mistral" | "huggingface" | "zai" | "ollama";
+import type {AdditionalChatId} from "@/lib/ai/additional-chat";
+export type ProviderId = AdditionalChatId | "gemini" | "groq" | "cerebras" | "openrouter" | "cloudflare" | "mistral" | "huggingface" | "zai" | "ollama";
 
-export const PROVIDER_IDS: readonly ProviderId[] = ["openrouter", "gemini", "groq", "cloudflare", "mistral", "huggingface", "zai", "ollama", "cerebras"];
+export const PROVIDER_IDS: readonly ProviderId[] = ["sambanova", "cohere", "openrouter", "gemini", "groq", "cloudflare", "mistral", "huggingface", "zai", "ollama", "cerebras"];
 
 export const PROVIDER_LABELS: Record<ProviderId, string> = {
+  sambanova: "SambaNova",
+  cohere: "Cohere",
   gemini: "Google Gemini",
   groq: "Groq",
   cerebras: "Cerebras",

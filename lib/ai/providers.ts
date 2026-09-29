@@ -1,4 +1,5 @@
 import "server-only";
+import {ADDITIONAL_CHAT,isAdditionalChat} from "@/lib/ai/additional-chat";
 
 import { PROVIDER_IDS, PROVIDER_LABELS, type ProviderId } from "@/lib/ai/types";
 import { freeTierConfirmed } from "@/lib/ai/free-policy";
@@ -17,6 +18,7 @@ export interface OpenAICompatibleConfig {
   /** Whether the provider honours `stream_options.include_usage`. */
   supportsStreamUsage: boolean;
   zeroPriceOnly?: boolean;
+  systemRole?: "system" | "developer";
 }
 
 export interface GeminiConfig {
@@ -32,6 +34,11 @@ function env(name: string): string | null {
 
 /** Returns the provider's config, or null when it isn't configured. */
 export function getProviderConfig(provider: ProviderId): ProviderConfig | null {
+  if(isAdditionalChat(provider)) {
+    const p=ADDITIONAL_CHAT[provider];const apiKey=env(p.env);
+    if(!apiKey || /\s/.test(apiKey) || process.env[provider.toUpperCase()+"_FREE_TIER_CONFIRMED"]!=="true")return null;
+    return {kind:"openai-compatible",apiKey,baseUrl:p.baseUrl,supportsStreamUsage:false,systemRole:provider==="cohere"?"developer":"system"};
+  }
   switch (provider) {
     case "gemini":
       return env("GEMINI_API_KEY") ? { kind: "gemini" } : null;
@@ -110,6 +117,8 @@ export function providerNotConfiguredMessage(provider: ProviderId): string {
   }
 
   const envVar: Record<ProviderId, string> = {
+    sambanova:"SAMBANOVA_API_KEY and SAMBANOVA_FREE_TIER_CONFIRMED=true",
+    cohere:"COHERE_API_KEY and COHERE_FREE_TIER_CONFIRMED=true",
     gemini: "GEMINI_API_KEY",
     groq: "GROQ_API_KEY",
     cerebras: "CEREBRAS_API_KEY",

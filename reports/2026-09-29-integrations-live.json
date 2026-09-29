@@ -1,0 +1,41 @@
+{
+  "date": "2026-09-29T11:22:57.903Z",
+  "results": [
+    {
+      "provider": "openalex",
+      "status": "failed",
+      "reason": "OpenAlex could not complete the request (HTTP 503).",
+      "ms": 6394
+    },
+    {
+      "provider": "semantic",
+      "status": "failed",
+      "reason": "Semantic Scholar's free allowance is busy or exhausted. Try again after its reset.",
+      "ms": 6793
+    },
+    {
+      "provider": "crossref",
+      "status": "passed",
+      "sources": 5,
+      "ms": 8068
+    },
+    {
+      "provider": "wikimedia",
+      "status": "passed",
+      "sources": 5,
+      "ms": 6673
+    },
+    {
+      "provider": "arxiv",
+      "status": "passed",
+      "sources": 5,
+      "ms": 7483
+    },
+    {
+      "provider": "jina",
+      "status": "passed",
+      "sources": 1,
+      "ms": 6332
+    }
+  ]
+}

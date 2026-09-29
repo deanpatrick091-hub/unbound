@@ -50,7 +50,7 @@ export async function* streamOpenAICompatible(
       stream: true,
       max_tokens: maxTokens,
       messages: [
-        { role: "system", content: systemInstruction },
+        { role: config.systemRole ?? "system", content: systemInstruction },
         ...turns.map((t) => ({ role: t.role, content: t.content })),
       ],
     };
@@ -73,7 +73,7 @@ export async function* streamOpenAICompatible(
         body: buildBody(maxTokens),
         signal,
       });
-    } catch (error) {
+    } catch {
       if (signal?.aborted) {
         yield { type: "error", code: "aborted", message: "The request was cancelled." };
         return;
@@ -189,7 +189,7 @@ export async function* streamOpenAICompatible(
         return;
       }
     }
-  } catch (error) {
+  } catch {
     if (signal?.aborted) {
       yield { type: "error", code: "aborted", message: "The request was cancelled." };
       return;
