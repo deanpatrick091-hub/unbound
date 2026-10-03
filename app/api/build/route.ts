@@ -1,3 +1,5 @@
+import {getProject,isUuid} from "@/lib/projects/server";
+import type {Json} from "@/lib/supabase/database.types";
 import { getAvailableModel } from "@/lib/ai/discovery";
 import type { NextRequest } from "next/server";
 
@@ -83,7 +85,14 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
   const parsed = parseBuildRequest(body);
   if (!parsed.ok) return errorResponse(400, "invalid_request", parsed.message);
-  const { instruction, files, history } = parsed.data;
+  const { instruction } = parsed.data;
+  if(!isRecord(body)||!isUuid(body.projectId)||!Number.isInteger(body.revision))return errorResponse(400,'invalid_request','Open a saved Build project before generating.');
+  const project=await getProject(body.projectId);
+  if(!project)return errorResponse(404,'invalid_request','Project unavailable.');
+  if(project.role==='viewer')return errorResponse(403,'invalid_request','This project is read-only.');
+  if(project.revision!==body.revision)return errorResponse(409,'invalid_request','This project changed elsewhere. Reopen it before building.');
+  const files=project.files;
+  const history=project.conversation.slice(-BUILD_LIMITS.contextTurns).map(m=>({role:m.role,content:m.content.slice(0,2000)}));
 
   const model = resolveModel(parsed.data.model, await getDefaultModelFor(supabase, user.id));
   const { provider } = parseModelId(model);
@@ -138,12 +147,14 @@ export async function POST(request: NextRequest): Promise<Response> {
         let usage: TokenUsage | undefined;
         let failure: Extract<BuildStreamEvent, { type: "error" }> | undefined;
         let produced = 0;
+        let summary="";
+        const outputFiles:SiteFiles={...files};
 
         const emit = (pieces: ReturnType<BuildOutputParser["push"]>) => {
           for (const piece of pieces) {
-            if (piece.kind === "text") send({ type: "text", text: piece.text });
+            if (piece.kind === "text") {summary+=piece.text;send({ type: "text", text: piece.text });}
             else if (piece.kind === "file_start") send({ type: "file_start", name: piece.name });
-            else send({ type: "file", name: piece.name, content: piece.content });
+            else {outputFiles[piece.name]=piece.content;send({ type: "file", name: piece.name, content: piece.content });}
           }
         };
 
@@ -180,7 +191,14 @@ export async function POST(request: NextRequest): Promise<Response> {
         }
 
         if (failure) send(failure);
-        else if (!abort.signal.aborted) send({ type: "done", usage, model: usedModel });
+        else if (!abort.signal.aborted) {
+          if(!outputFiles['index.html']?.trim()){send({type:'error',code:'upstream_error',message:'The model did not produce a complete webpage. Your previous version is safe.'});close();return;}
+          const now=Date.now();
+          const conversation=[...project.conversation,{id:crypto.randomUUID(),role:'user',content:instruction,createdAt:now},{id:crypto.randomUUID(),role:'assistant',content:summary.trim()||'Done — the preview is updated.',createdAt:now,status:'complete'}];
+          const saved=await supabase.rpc('save_project',{p_id:project.id,p_revision:project.revision,p_files:outputFiles as Json,p_conversation:conversation as Json,p_model:usedModel,p_settings:project.settings,p_preview:project.preview_state});
+          if(saved.error)send({type:'error',code:'upstream_error',message:saved.error.code==='40001'?'Another editor saved a newer version. Reopen this project.':'The generated site could not be saved. Your previous version is safe; please retry.'});
+          else send({type:'done',usage,model:usedModel,revision:saved.data});
+        }
         close();
       };
 

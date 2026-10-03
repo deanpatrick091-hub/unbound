@@ -12,8 +12,9 @@ const BuilderScreen = dynamic(() => import("@/components/build/builder-screen").
   loading: () => <BuilderSkeleton />,
 });
 
-export function BuilderWorkspace({ model }: { model: string }) {
-  return <BuilderScreen model={model} />;
+import type { ProjectSnapshot } from "@/lib/projects/types";
+export function BuilderWorkspace({ model, project }: { model: string; project: ProjectSnapshot }) {
+  return <BuilderScreen model={model} project={project} />;
 }
 
 function BuilderSkeleton() {

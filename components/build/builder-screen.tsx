@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { AlertCircle, Eye, MessageSquare, RotateCcw, Trash2, X } from "lucide-react";
+import Link from "next/link";
+import {PinButton} from "@/components/projects/pin-button";
+import {PeoplePanel} from "@/components/projects/people-panel";
+import type {ProjectSnapshot} from "@/lib/projects/types";
+import { useRef, useState } from "react";
+import { AlertCircle, Eye, MessageSquare, RotateCcw, Maximize, X } from "lucide-react";
 
 import { PreviewToolbar } from "@/components/build/preview-toolbar";
 import { SitePreview, type ViewportPreset } from "@/components/build/site-preview";
@@ -14,6 +18,7 @@ import { cn } from "@/lib/utils";
 
 interface BuilderScreenProps {
   model: string;
+  project: ProjectSnapshot;
 }
 
 const STATUS_ANNOUNCEMENTS: Record<BuilderStatus, string> = {
@@ -29,9 +34,10 @@ type MobileTab = "chat" | "preview";
  * Split workspace: conversation on the left (~45%), live sandboxed preview
  * on the right (~55%). Below `md` the two become tabs.
  */
-export function BuilderScreen({ model }: BuilderScreenProps) {
+export function BuilderScreen({ model,project }: BuilderScreenProps) {
   const { user } = useShell();
-  const builder = useBuilder({ userId: user.id, model });
+  const builder = useBuilder({ userId: user.id, model,project });
+  const previewRef=useRef<HTMLElement>(null);
   const [viewport, setViewport] = useState<ViewportPreset>("desktop");
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [mobileTab, setMobileTab] = useState<MobileTab>("chat");
@@ -44,6 +50,7 @@ export function BuilderScreen({ model }: BuilderScreenProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2"><Link href="/build" className="platform-button">Projects</Link><h1 className="mr-auto truncate text-sm">{project.name}</h1><span className="text-xs text-subtle">{builder.isBusy?'Building…':builder.status==='error'?'Previous version preserved':`Saved · v${builder.version}`}</span><PinButton kind="project" id={project.id}/><PinButton kind="website" id={project.id}/><PeoplePanel project={project}/><Link href={'/build/'+project.id+'/history'} className="platform-button">History</Link></div>
       {/* Mobile: tab switcher */}
       <div role="tablist" aria-label="Workspace" className="flex h-11 shrink-0 items-stretch border-b md:hidden">
         <MobileTabButton active={mobileTab === "chat"} onClick={() => setMobileTab("chat")} icon={MessageSquare}>
@@ -66,15 +73,7 @@ export function BuilderScreen({ model }: BuilderScreenProps) {
         >
           <div className="hidden h-12 shrink-0 items-center justify-between border-b px-4 md:flex">
             <h1 className="text-sm font-medium">Website builder</h1>
-            <button
-              type="button"
-              onClick={builder.reset}
-              disabled={builder.messages.length === 0 && !builder.hasSite}
-              className="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground transition-colors outline-none hover:bg-raised hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
-            >
-              <Trash2 className="size-3.5" aria-hidden="true" />
-              Start over
-            </button>
+
           </div>
 
           <MessageList messages={builder.messages} isBusy={builder.isBusy} emptyState={<EmptyState />} />
@@ -124,7 +123,7 @@ export function BuilderScreen({ model }: BuilderScreenProps) {
               <Eye className="size-4" aria-hidden="true" /> View website preview
             </button>
           ) : null}
-          <Composer
+          {project.role==='viewer'?<p className="p-4 text-sm text-subtle">Viewer access · this project is read-only.</p>:<Composer
             isBusy={builder.isBusy}
             model={builder.model}
             onModelChange={builder.setModel}
@@ -133,18 +132,20 @@ export function BuilderScreen({ model }: BuilderScreenProps) {
             placeholder={builder.hasSite ? "Describe a change… e.g. “make the hero darker”" : "Describe the website you want…"}
             maxLength={BUILD_LIMITS.maxInstructionLength}
             hint="Enter to send · Shift+Enter for a new line · each request edits the current site"
+            suggestions={["Build a landing page","Create a portfolio","Make it responsive","Improve this website"]}
             autoFocus
-          />
+          />}
         </section>
 
         {/* Right: preview (55%) */}
         <section
+          ref={previewRef}
           aria-label="Website preview"
           className={cn("min-h-0 min-w-0 flex-col md:flex md:w-[55%]", mobileTab === "preview" ? "flex w-full" : "hidden")}
         >
           <div className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
             <Eye className="size-4 text-muted-foreground" aria-hidden="true" />
-            <h2 className="text-sm font-medium">Live website preview</h2>
+            <h2 className="text-sm font-medium">Live website preview</h2><button className="platform-button ml-auto" aria-label="Fullscreen preview" onClick={()=>void previewRef.current?.requestFullscreen().catch(()=>{})}><Maximize size={14}/></button>
           </div>
           <PreviewToolbar
             viewport={viewport}
@@ -215,3 +216,4 @@ function EmptyState() {
     </div>
   );
 }
+

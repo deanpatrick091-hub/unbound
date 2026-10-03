@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import type { ProjectSnapshot } from "@/lib/projects/types";
 import { describeModel } from "@/lib/ai/models";
 import type { BuildRequestBody, BuildStreamEvent, SiteFileName, SiteFiles } from "@/lib/build/types";
 import type { ChatErrorCode, ChatMessage } from "@/lib/chat/types";
@@ -28,23 +29,6 @@ function createMessage(role: ChatMessage["role"], content: string): ChatMessage 
   return { id: createId(), role, content, createdAt: Date.now() };
 }
 
-function loadSnapshot(key: string): Snapshot | null {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<Snapshot>;
-    if (!parsed || typeof parsed !== "object" || !parsed.files) return null;
-    return {
-      files: parsed.files,
-      messages: Array.isArray(parsed.messages) ? parsed.messages : [],
-      model: typeof parsed.model === "string" ? parsed.model : "",
-      version: typeof parsed.version === "number" ? parsed.version : 0,
-    };
-  } catch {
-    return null;
-  }
-}
-
 /**
  * State for the website-builder workspace: the conversation, the current
  * site files, and streaming from /api/build. The site autosaves to
@@ -53,10 +37,10 @@ function loadSnapshot(key: string): Snapshot | null {
  * Must run client-only (the screen is loaded with `ssr: false`): the initial
  * state is read from localStorage synchronously in the useState initialisers.
  */
-export function useBuilder(options: { userId: string; model: string }) {
+export function useBuilder(options: { userId: string; model: string; project: ProjectSnapshot }) {
   const router = useRouter();
-  const storageKey = `${STORAGE_PREFIX}${options.userId}`;
-  const [initial] = useState(() => loadSnapshot(storageKey));
+  const storageKey = `${STORAGE_PREFIX}${options.userId}:${options.project.id}`;
+  const [initial] = useState(() => ({files:options.project.files,messages:options.project.conversation,model:options.project.model,version:options.project.revision}));
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => initial?.messages ?? []);
   const [files, setFiles] = useState<SiteFiles>(() => initial?.files ?? {});
@@ -68,6 +52,7 @@ export function useBuilder(options: { userId: string; model: string }) {
   /** Which file is currently being written by the model, if any. */
   const [writing, setWriting] = useState<SiteFileName | null>(null);
 
+  const revisionRef = useRef(options.project.revision);
   const abortRef = useRef<AbortController | null>(null);
   const messagesRef = useRef<ChatMessage[]>(initial?.messages ?? []);
   const filesRef = useRef<SiteFiles>(initial?.files ?? {});
@@ -128,6 +113,7 @@ export function useBuilder(options: { userId: string; model: string }) {
 
       let text = "";
       let receivedFile = false;
+      const stagedFiles:SiteFiles = {...filesRef.current};
       const fail = (nextError: BuilderError) => {
         commitMessages((prev) =>
           text.length === 0
@@ -139,7 +125,7 @@ export function useBuilder(options: { userId: string; model: string }) {
         setWriting(null);
       };
 
-      const body: BuildRequestBody = { instruction: trimmed, files: filesRef.current, model: modelRef.current, history };
+      const body: BuildRequestBody = { instruction: trimmed, files: filesRef.current, model: modelRef.current, history, projectId:options.project.id, revision:revisionRef.current };
 
       try {
         const response = await fetch("/api/build", {
@@ -175,7 +161,7 @@ export function useBuilder(options: { userId: string; model: string }) {
               break;
             case "file":
               receivedFile = true;
-              commitFiles((prev) => ({ ...prev, [event.name]: event.content }));
+              stagedFiles[event.name] = event.content;
               setWriting(null);
               break;
             case "model_switched": {
@@ -189,13 +175,15 @@ export function useBuilder(options: { userId: string; model: string }) {
               fail({ code: event.code, message: event.message });
               return;
             case "done":
-              if (!filesRef.current["index.html"]?.trim()) {
+              if (!stagedFiles["index.html"]?.trim()) {
                 fail({
                   code: "upstream_error",
                   message: "The model did not produce an HTML page to preview. Try another model or ask it to build a complete index.html page.",
                 });
                 return;
               }
+              if(event.revision!==undefined)revisionRef.current=event.revision;
+              commitFiles(()=>stagedFiles);
               commitMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistant.id
@@ -225,7 +213,7 @@ export function useBuilder(options: { userId: string; model: string }) {
         if (abortRef.current === controller) abortRef.current = null;
       }
     },
-    [commitFiles, commitMessages, isBusy, router],
+    [commitFiles, commitMessages, isBusy, router, options.project.id],
   );
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
@@ -270,3 +258,4 @@ export function useBuilder(options: { userId: string; model: string }) {
     hasSite: Boolean(files["index.html"]),
   };
 }
+

@@ -23,6 +23,11 @@ OUTPUT FORMAT — follow exactly:
 <<<END>>>
 Rules for the format: always output ALL files in full (never diffs, never "unchanged", never "..."). Only these file names are allowed: ${SITE_FILE_NAMES.join(", ")}. index.html is mandatory; include styles.css and script.js whenever the site has styles or behaviour (it almost always should). Do not wrap files in markdown code fences. Do not write anything after the last <<<END>>>.
 
+DESIGN DIRECTION:
+Before writing, choose a visual system appropriate to the request: audience, tone, typography pairing, restrained palette, spacing scale, grid and imagery treatment. Explain the direction in one short sentence, not internal reasoning. Luxury should use editorial composition and refined materials; minimalism should use intentional hierarchy and whitespace; futuristic should feel precise rather than neon.
+Avoid default purple gradients, glowing cards, generic centered SaaS heroes, repetitive card grids and oversized empty sections. Use a distinctive composition suited to the actual content. Write convincing specific copy, connect sections visually, and give navigation and calls to action meaningful destinations. Deliver a finished responsive page rather than a wireframe.
+Use accessible focus states, sufficient contrast, comfortable reading widths, fluid type, semantic landmarks, mobile navigation and reduced-motion support. Provide loading and success/error states for interactions. Never pretend a form was sent to a backend that does not exist.
+
 SITE RULES:
 - index.html must be a complete document with <!doctype html>, <html lang>, <head> (charset, viewport, <title>), and must reference the other files exactly as <link rel="stylesheet" href="styles.css"> and <script src="script.js" defer></script>.
 - Vanilla HTML, CSS and JavaScript by default. Use React only when the user asks for React or an app-like interface; then load React and ReactDOM UMD builds and Babel standalone from https://unpkg.com and put the app in script.js with type="text/babel" wiring in index.html.

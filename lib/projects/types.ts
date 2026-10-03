@@ -1,0 +1,13 @@
+import type { Json } from '@/lib/supabase/database.types';
+import type { SiteFiles } from '@/lib/build/types';
+import type { ChatMessage } from '@/lib/chat/types';
+export type ProjectRow={id:string;owner_id:string;name:string;model:string;conversation:Json;settings:Json;preview_state:Json;revision:number;updated_by:string|null;created_at:string;updated_at:string;deleted_at:string|null};
+export type HandleRow={user_id:string;username:string;display_name:string;avatar_url:string|null;changed_at:string};
+export type MemberRow={project_id:string;user_id:string;role:'editor'|'viewer';created_at:string};
+export type InviteRow={id:string;project_id:string;inviter_id:string;invitee_id:string;role:'editor'|'viewer';status:'pending'|'accepted'|'declined'|'revoked';created_at:string;expires_at:string};
+export type FileRow={project_id:string;path:string;content:string;updated_by:string;updated_at:string};
+export type VersionRow={id:string;project_id:string;revision:number;files:Json;conversation:Json;created_by:string;created_at:string};
+export type AssetRow={id:string;project_id:string|null;owner_id:string;prompt:string;provider:string;mime_type:string;data_url:string;created_at:string;source_job_id:string|null};
+export type PinRow={id:string;user_id:string;kind:'chat'|'project'|'website';project_id:string|null;conversation_id:string|null;created_at:string};
+export type IntegrationJobRow={id:string;user_id:string;provider:string;remote_id:string;input:string;result:Json|null;created_at:string};
+export type ProjectSnapshot=Omit<ProjectRow,'conversation'> & {conversation:ChatMessage[];files:SiteFiles;role:'owner'|'editor'|'viewer'};

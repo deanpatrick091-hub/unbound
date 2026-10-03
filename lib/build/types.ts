@@ -28,6 +28,8 @@ export interface BuildHistoryTurn {
 
 export interface BuildRequestBody {
   instruction: string;
+  projectId?: string;
+  revision?: number;
   /** The site as it currently exists in the workspace (empty for a fresh build). */
   files: SiteFiles;
   model?: string;
@@ -43,7 +45,7 @@ export type BuildStreamEvent =
   | { type: "file"; name: SiteFileName; content: string }
   | { type: "model_switched"; from: string; to: string; reason: string }
   | { type: "error"; code: ChatErrorCode; message: string }
-  | { type: "done"; usage?: TokenUsage; model: string };
+  | { type: "done"; usage?: TokenUsage; model: string; revision?:number };
 
 /** Markers the model uses to delimit files. Exact-match, one per line. */
 export const FILE_START = /^<<<FILE\s+([A-Za-z0-9._-]+)>>>\s*$/;

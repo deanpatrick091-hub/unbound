@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback } from "react";
-import { AlertCircle, ArrowUpRight, CloudOff, Lightbulb, PenLine, RotateCcw, X, Zap } from "lucide-react";
+import { AlertCircle, CloudOff, RotateCcw, X } from "lucide-react";
 
+import {PinButton} from "@/components/projects/pin-button";
+import Link from "next/link";
 import { Composer } from "@/components/chat/composer";
 import { MessageList } from "@/components/chat/message-list";
 import { useShell } from "@/components/shell/shell-context";
@@ -25,7 +27,7 @@ const STATUS_ANNOUNCEMENTS: Record<ChatStatus, string> = {
 };
 
 export function ChatScreen({ conversationId, title, initialMessages, model }: ChatScreenProps) {
-  const { user, models, upsertConversation, refreshConversations } = useShell();
+  const { models, upsertConversation, refreshConversations } = useShell();
 
   const onConversationCreated = useCallback(
     (created: { id: string; title: string }) => {
@@ -52,6 +54,7 @@ export function ChatScreen({ conversationId, title, initialMessages, model }: Ch
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="chat-heading flex h-12 shrink-0 items-center justify-between gap-3 px-5 sm:px-7">
         <h1 className="truncate text-sm font-medium text-foreground">{activeTitle ?? "New chat"}</h1>
+        {chat.conversationId&&<PinButton kind="chat" id={chat.conversationId}/>}
         <span className="truncate text-xs text-subtle" title={`${described.providerLabel} · ${described.label}`}>
           <span className="text-muted-foreground">{described.providerLabel}</span> · {described.label}
         </span>
@@ -60,7 +63,7 @@ export function ChatScreen({ conversationId, title, initialMessages, model }: Ch
       <MessageList
         messages={chat.messages}
         isBusy={chat.isBusy}
-        emptyState={<EmptyState name={user.displayName} disabled={chat.isBusy || !models.length} onPrompt={text => void chat.sendMessage(text)} />}
+        emptyState={<p className="text-sm text-subtle">Your space to think, explore, and create.</p>}
       />
 
       <p role="status" className="sr-only">
@@ -109,26 +112,16 @@ export function ChatScreen({ conversationId, title, initialMessages, model }: Ch
         </div>
       ) : null}
 
+      {!chat.messages.length&&<div className="mx-auto mb-2 flex gap-4 text-xs text-muted-foreground"><Link href="/build">Build a website ↗</Link><Link href="/image-gen">Generate an image ↗</Link><Link href="/tools">Research ↗</Link></div>}
       <Composer
         isBusy={chat.isBusy}
         model={chat.model}
         onModelChange={chat.setModel}
         onSend={(content) => void chat.sendMessage(content)}
         onStop={chat.stop}
+        suggestions={chat.messages.length?["Explain that further","Give me an example"]:["Explain something","Help me code","Plan an idea"]}
         autoFocus={initialMessages.length === 0}
       />
     </div>
   );
-}
-
-function EmptyState({ name, onPrompt, disabled }: { name: string | null; onPrompt: (text: string) => void; disabled: boolean }) {
-  const first = name?.trim().split(/\s+/)[0];
-  return <div className="chat-welcome w-full max-w-2xl animate-rise-in">
-    <p className="text-sm text-muted-foreground">{first ? "Hello, " + first + "." : "Your space to think."}</p>
-    <h2 className="mt-4 text-3xl font-medium leading-[1.15] tracking-[-0.045em] sm:text-4xl">What’s on your mind?</h2>
-    <p className="mt-4 max-w-md text-sm leading-relaxed text-muted-foreground">Ask, explore, or make something new.</p>
-    <div className="mt-9 grid gap-3 sm:grid-cols-3">
-      {[{ icon: Lightbulb, title: "Find an idea", text: "Help me brainstorm a useful project I could build this weekend. Ask about my interests first." }, { icon: PenLine, title: "Make it clearer", text: "Help me improve something I have written. Ask me to paste the text and tell you who it is for." }, { icon: Zap, title: "Think it through", text: "Help me work through a decision. Ask me what I am deciding and what matters most." }].map(item => <button key={item.title} type="button" className="prompt-card disabled:opacity-50" disabled={disabled} onClick={() => onPrompt(item.text)}><item.icon size={20} className="mb-5 text-brand" /><span className="flex items-center justify-between gap-2 text-sm">{item.title}<ArrowUpRight size={15} /></span></button>)}
-    </div>
-  </div>;
 }

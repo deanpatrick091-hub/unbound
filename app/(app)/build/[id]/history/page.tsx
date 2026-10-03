@@ -1,0 +1,5 @@
+import Link from 'next/link';
+import {notFound} from 'next/navigation';
+import {getProject} from '@/lib/projects/server';
+import {getSession} from '@/lib/auth/session';
+export default async function HistoryPage({params}:{params:Promise<{id:string}>}){const {id}=await params;const project=await getProject(id);if(!project)notFound();const {supabase}=await getSession();const {data,error}=await supabase.from('project_versions').select('id,revision,created_at,created_by').eq('project_id',id).order('revision',{ascending:false}).limit(100);if(error)throw Error('History could not be loaded.');const {data:people}=await supabase.from('user_handles').select('user_id,username').in('user_id',[...new Set((data??[]).map(v=>v.created_by))]);return <div className="overflow-auto p-7"><Link href={'/build/'+id} className="platform-button">Back to project</Link><h1 className="my-6 text-2xl">{project.name} · History</h1>{data?.map(v=><div key={v.id} className="platform-card mb-3">Version {v.revision}<p className="mt-2 text-xs text-subtle">{new Date(v.created_at).toLocaleString()} · @{people?.find(p=>p.user_id===v.created_by)?.username??'collaborator'}</p></div>)}</div>;}

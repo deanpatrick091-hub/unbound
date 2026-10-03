@@ -322,3 +322,14 @@
     .glass-panel, .glass-dialog, .message-user, .message-assistant, .composer-glass, .chat-welcome { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
   }
 }
+
+/* Restrained silver material shared across persistent workspaces. */
+.platform-card { border:1px solid var(--border); border-radius:20px; padding:1.4rem; background:var(--surface); box-shadow:inset 0 1px 0 #ffffff16,0 14px 45px -35px #0008; }
+.platform-button { display:inline-flex; align-items:center; justify-content:center; gap:.4rem; min-height:34px; padding:.45rem .7rem; border:1px solid var(--border); border-radius:10px; font-size:.75rem; background:var(--surface); transition:background .15s,border-color .15s; }
+.platform-button:hover { background:var(--raised); border-color:var(--border-strong); }
+.platform-button:disabled { opacity:.45; cursor:wait; }
+.platform-button:focus-visible,.platform-input:focus-visible,.suggestion-chip:focus-visible { outline:2px solid var(--ring); outline-offset:3px; }
+.platform-input { border:1px solid var(--border); border-radius:10px; padding:.65rem .8rem; background:var(--surface); color:var(--foreground); font-size:.875rem; min-width:0; }
+.suggestion-chip { border:1px solid var(--border); border-radius:100px; padding:.45rem .75rem; color:var(--muted-foreground); background:var(--surface); font-size:.75rem; transition:color .15s,border-color .15s; }
+.suggestion-chip:hover { color:var(--foreground); border-color:var(--border-strong); }
+section:fullscreen { background:var(--background); width:100%!important; }

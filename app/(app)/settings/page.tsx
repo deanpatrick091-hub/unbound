@@ -1,3 +1,4 @@
+import {IdentityForm} from "@/components/projects/identity-form";
 import type { Metadata } from "next";
 
 import { PreferencesForm, ProfileForm } from "@/components/settings/settings-forms";
@@ -15,6 +16,8 @@ export default async function SettingsPage() {
   const { supabase, user } = await getSession();
   if (!user) return <SessionUnavailable />;
 
+  const {data:handle}=await supabase.from('user_handles').select('*').eq('user_id',user.id).maybeSingle();
+  const {data:auth}=await supabase.auth.getUser();
   const [profile, prefs, usage, models] = await Promise.all([
     getProfile(supabase, user.id).catch(() => null),
     getPreferences(supabase, user.id).catch(() => null),
@@ -34,6 +37,7 @@ export default async function SettingsPage() {
           <Section title="Appearance" description="Your theme and personal chat background.">
             <AppearanceControls />
           </Section>
+          <Section title="Identity & access" description="Choose a username and keep access across devices."><IdentityForm initial={handle} userId={user.id} anonymous={!!auth.user?.is_anonymous}/></Section>
           <Section title="Profile" description="How you appear inside UNBOUND.">
             <ProfileForm displayName={profile?.display_name ?? null} />
           </Section>
@@ -48,9 +52,7 @@ export default async function SettingsPage() {
 
           <Section title="This browser" description="How your workspace is kept.">
             <p className="text-sm leading-relaxed text-muted-foreground">
-              UNBOUND has no accounts. Your conversations, Council sessions and preferences are tied
-              to this browser and are not visible to anyone else. Clearing site data starts a fresh,
-              empty workspace.
+              Your conversations and builds are private to your account. Guest sessions belong to this browser until you link an email. Clearing browser data before linking can lose access to your guest workspace.
             </p>
           </Section>
         </div>

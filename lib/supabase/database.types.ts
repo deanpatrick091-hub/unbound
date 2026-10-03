@@ -1,3 +1,4 @@
+import type { ProjectRow,HandleRow,MemberRow,InviteRow,FileRow,VersionRow,AssetRow,PinRow,IntegrationJobRow } from '@/lib/projects/types';
 /**
  * Hand-maintained mirror of supabase/migrations. Keep in sync when the schema
  * changes (or replace with `supabase gen types typescript` output later).
@@ -101,6 +102,15 @@ type Table<Row, Required extends keyof Row = never> = {
 export type Database = {
   public: {
     Tables: {
+      projects: Table<ProjectRow, 'owner_id'|'model'>;
+      user_handles: Table<HandleRow, 'user_id'|'username'|'display_name'>;
+      project_members: Table<MemberRow, 'project_id'|'user_id'|'role'>;
+      project_invites: Table<InviteRow, 'project_id'|'inviter_id'|'invitee_id'|'role'>;
+      project_files: Table<FileRow, 'project_id'|'path'|'content'|'updated_by'>;
+      project_versions: Table<VersionRow, 'project_id'|'revision'|'files'|'conversation'|'created_by'>;
+      project_assets: Table<AssetRow, 'owner_id'|'prompt'|'provider'|'mime_type'|'data_url'>;
+      pins: Table<PinRow, 'user_id'|'kind'>;
+      integration_jobs: Table<IntegrationJobRow, 'user_id'|'provider'|'remote_id'>;
       profiles: Table<ProfileRow, "id">;
       user_preferences: Table<UserPreferencesRow, "user_id">;
       conversations: Table<ConversationRow, "user_id" | "model">;
@@ -112,6 +122,8 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      save_project: { Args: {p_id:string;p_revision:number;p_files:Json;p_conversation:Json;p_model:string;p_settings?:Json;p_preview?:Json};Returns:number };
+      accept_project_invite: { Args: {p_id:string};Returns:string };
       consume_request: {
         Args: {
           p_feature: string;

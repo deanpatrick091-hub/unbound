@@ -18,6 +18,7 @@ interface ComposerProps {
   autoFocus?: boolean;
   maxLength?: number;
   hint?: string;
+  suggestions?: string[];
 }
 
 export function Composer({
@@ -29,6 +30,7 @@ export function Composer({
   placeholder = "Message UNBOUND…",
   autoFocus = false,
   maxLength = CHAT_LIMITS.maxMessageLength,
+  suggestions = [],
   hint = "Enter to send · Shift+Enter for a new line",
 }: ComposerProps) {
   const { models } = useShell();
@@ -73,6 +75,7 @@ export function Composer({
 
   return (
     <form onSubmit={handleSubmit} className="mx-auto w-full max-w-3xl px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
+      {suggestions.length>0&&<div className="mb-3 flex flex-wrap gap-2" aria-label="Suggested prompts">{suggestions.map(text=><button key={text} type="button" disabled={isBusy} className="suggestion-chip" onClick={()=>{setValue(text);textareaRef.current?.focus();}}>{text}</button>)}</div>}
       <div
         className={cn(
           "composer-glass border transition-[border-color,box-shadow] duration-200",

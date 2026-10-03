@@ -10,7 +10,7 @@ const arxivCache=new Map<string,{until:number;value:ToolResult}>();let arxivNext
 export async function runResearch(id:string,input:string,signal?:AbortSignal):Promise<ToolResult>{
  if(!input.trim()||input.length>4000)throw new IntegrationError(400,'Use between 1 and 4,000 characters.');
  const {key}=integrationConfig(id);const q=encodeURIComponent(input.trim());
- const auth=key?{Authorization:'Bearer '+key}:{};
+ const auth:Record<string,string>=key?{Authorization:'Bearer '+key}:{};
  const headers:Record<string,string>={'Content-Type':'application/json',...auth};
  const get=async(url:string,h:HeadersInit={})=>JSON.parse(await boundedText(await providerFetch(id,url,{headers:h},signal)));
  const post=async(url:string,body:unknown,h:HeadersInit=headers)=>JSON.parse(await boundedText(await providerFetch(id,url,{method:'POST',headers:h,body:JSON.stringify(body)},signal)));
@@ -43,3 +43,4 @@ export async function runResearch(id:string,input:string,signal?:AbortSignal):Pr
  }
  markIntegration(id,'AVAILABLE');const output={content:markdown(rows),sources:rows};if(id==='arxiv'){if(arxivCache.size>100)arxivCache.clear();arxivCache.set(q,{until:Date.now()+300000,value:output});}return output;
 }
+
