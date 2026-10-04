@@ -75,7 +75,7 @@ test('generation never retries after partial text or user cancellation',async()=
   const original=globalThis.fetch; const old=process.env.OPENROUTER_API_KEY;
   process.env.OPENROUTER_API_KEY='test';invalidateModelCache();let calls=0;
   globalThis.fetch=async(url)=>{
-    if(String(url).endsWith('/models'))return Response.json({data:[{id:'test/free',pricing:{prompt:'0',completion:'0'}}]});
+    if(!String(url).endsWith('/chat/completions'))return Response.json({data:[{id:'test/free',pricing:{prompt:'0',completion:'0'}}]});
     calls++;return new Response('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n');
   };
   try{
