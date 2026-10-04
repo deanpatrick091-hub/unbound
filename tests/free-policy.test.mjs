@@ -56,7 +56,7 @@ test('discovery blocks arbitrary paid IDs and harness-restricted models',async()
   const {getAvailableModels,getAvailableModel,invalidateModelCache}=await import('../lib/ai/discovery.ts');
   const original=globalThis.fetch; const old=process.env.OPENROUTER_API_KEY;
   process.env.OPENROUTER_API_KEY='test'; invalidateModelCache();
-  globalThis.fetch=async()=>Response.json({data:[
+  globalThis.fetch=async(url)=>!String(url).startsWith("https://openrouter.ai/")?Response.json({data:[]}):Response.json({data:[
     {id:'test/free',pricing:{prompt:'0',completion:'0'}},
     {id:'test/paid',pricing:{prompt:'0.1',completion:'0.1'}},
     {id:'test/hidden-charge',pricing:{prompt:'0',completion:'0',request:'0.1'}},
@@ -64,7 +64,7 @@ test('discovery blocks arbitrary paid IDs and harness-restricted models',async()
     {id:'test/embedding',pricing:{prompt:'0',completion:'0'}},
   ]});
   try{
-    const ids=(await getAvailableModels()).map(m=>m.id);
+    const ids=(await getAvailableModels()).filter(m=>m.provider==='openrouter').map(m=>m.id);
     assert.deepEqual(ids,['openrouter:openrouter/free','openrouter:test/free']);
     assert.equal(await getAvailableModel('openrouter:test/paid'),undefined);
   }finally{globalThis.fetch=original;if(old===undefined)delete process.env.OPENROUTER_API_KEY;else process.env.OPENROUTER_API_KEY=old;invalidateModelCache();}
@@ -98,4 +98,17 @@ test('response length limits cannot masquerade as completed answers',async()=>{
 test('payment-required responses stop at the free allowance',async()=>{
   const {events}=await collect('{"error":{"message":"Credits exhausted"}}',402);
   assert.equal(events.at(-1).code,'quota_exhausted');
+});
+
+test('Kilo discovery admits only explicitly free IDs with every price zero',async()=>{
+ const {getAvailableModels,invalidateModelCache}=await import('../lib/ai/discovery.ts');
+ const original=globalThis.fetch;invalidateModelCache();
+ globalThis.fetch=async(url)=>Response.json({data:String(url).startsWith('https://api.kilo.ai/')?[
+  {id:'safe/model:free',pricing:{prompt:'0',completion:'0'}},
+  {id:'unknown/model',pricing:{prompt:'0',completion:'0'}},
+  {id:'paid/model:free',pricing:{prompt:'0.1',completion:'0'}},
+  {id:'hidden/model:free',pricing:{prompt:'0',completion:'0',request:'1'}},
+ ]:[]});
+ try{assert.deepEqual((await getAvailableModels()).filter(m=>m.provider==='kilo').map(m=>m.id),['kilo:safe/model:free']);}
+ finally{globalThis.fetch=original;invalidateModelCache();}
 });

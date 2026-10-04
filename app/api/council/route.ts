@@ -90,8 +90,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const limit = await consumeRequest(supabase, "council");
   if (!limit.allowed) return limitResponse(limit);
 
-  // Persistence is best-effort: without storage the run still happens, it just
-  // won't appear in Council history.
+  // Start only after the session is durable; never silently lose a Council run.
   const title = titleFromContent(question.data);
   let sessionId: string;
   const persisted = true;
@@ -104,7 +103,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     });
     sessionId = session.id;
   } catch (error) {
-    console.warn("[council] storage unavailable — running without persistence:", error);
+    console.warn("[council] session creation failed:", error);
     return errorResponse(503,"storage_error","Council history is unavailable. Please retry before starting.");
   }
 
@@ -167,7 +166,7 @@ export async function POST(request: NextRequest): Promise<Response> {
               userId,
               feature: "council",
               councilSessionId: sessionId,
-              model,
+              model: actualModel,
               ...event.usage,
             });
           }
@@ -226,7 +225,10 @@ export async function POST(request: NextRequest): Promise<Response> {
 
       run().catch(async (error) => {
         console.error("[council] runner crashed:", error);
-        if (persisted) await setCouncilSessionStatus(supabase, sessionId, "error");
+        if (persisted) {
+          try { await setCouncilSessionStatus(supabase, sessionId, "error"); }
+          catch { console.error("[council] could not persist failure status"); }
+        }
         send({ type: "error", code: "upstream_error", message: "The Council run failed. Please try again." });
         close();
       });
