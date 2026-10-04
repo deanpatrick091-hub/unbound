@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import { useRef, useState } from "react";
 import { Download, ImagePlus, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -36,7 +37,7 @@ export function ImageStudio({ connected }: { connected: boolean }) {
       </div>
       <div className="glass-panel overflow-hidden rounded-3xl">
         <div className="flex aspect-square items-center justify-center p-3" aria-busy={busy}>
-          {src ? <img src={src} alt={prompt} className="size-full rounded-2xl object-contain" /> : <div className="text-center text-muted-foreground"><ImagePlus className="mx-auto mb-4 size-10" /><p>Your imagination goes here.</p></div>}
+          {src ? <Image unoptimized width={512} height={512} src={src} alt={prompt} className="size-full rounded-2xl object-contain" /> : <div className="text-center text-muted-foreground"><ImagePlus className="mx-auto mb-4 size-10" /><p>Your imagination goes here.</p></div>}
         </div>
         {src && <a href={src} download="unbound-flux.jpg" className="flex items-center justify-center gap-2 border-t p-4 text-sm hover:bg-accent"><Download className="size-4" />Download image</a>}
       </div>

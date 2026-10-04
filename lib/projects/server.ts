@@ -1,3 +1,4 @@
+import {parseSavedConversation} from "@/lib/projects/validation";
 import 'server-only';
 import { getSession } from '@/lib/auth/session';
 import type { ProjectSnapshot } from './types';
@@ -15,5 +16,5 @@ export async function getProject(id:string){
  if(fileError)return null;
  const role=p.owner_id===user.id?'owner':member?.role;
  if(!role)return null;
- return {...p,files:Object.fromEntries((files??[]).map(f=>[f.path,f.content])) as SiteFiles,conversation:Array.isArray(p.conversation)?p.conversation:[],role} as unknown as ProjectSnapshot;
+ return {...p,files:Object.fromEntries((files??[]).map(f=>[f.path,f.content])) as SiteFiles,conversation:parseSavedConversation(p.conversation),role} as ProjectSnapshot;
 }

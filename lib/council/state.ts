@@ -10,6 +10,7 @@ export interface CouncilMemberState {
   text: string;
   status: CouncilMemberStatus;
   message?: string;
+  model?: string;
 }
 
 export type CouncilMembers = Record<CouncilRole, CouncilMemberState>;

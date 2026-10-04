@@ -40,6 +40,7 @@ export function getProviderConfig(provider: ProviderId): ProviderConfig | null {
     return {kind:"openai-compatible",apiKey,baseUrl:p.baseUrl,supportsStreamUsage:false,systemRole:provider==="cohere"?"developer":"system"};
   }
   switch (provider) {
+    case "kilo": return {kind:"openai-compatible",baseUrl:"https://api.kilo.ai/api/gateway",apiKey:env("KILO_API_KEY"),supportsStreamUsage:true,zeroPriceOnly:true};
     case "gemini":
       return env("GEMINI_API_KEY") ? { kind: "gemini" } : null;
 
@@ -117,6 +118,7 @@ export function providerNotConfiguredMessage(provider: ProviderId): string {
   }
 
   const envVar: Record<ProviderId, string> = {
+    kilo:"KILO_API_KEY (optional for free models)",
     sambanova:"SAMBANOVA_API_KEY and SAMBANOVA_FREE_TIER_CONFIRMED=true",
     cohere:"COHERE_API_KEY and COHERE_FREE_TIER_CONFIRMED=true",
     gemini: "GEMINI_API_KEY",

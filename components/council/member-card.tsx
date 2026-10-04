@@ -19,7 +19,7 @@ export const MemberCard = memo(function MemberCard({ role, member, style }: Memb
   const isLive = member.status === "streaming";
 
   return (
-    <article
+    <details open
       aria-label={label}
       aria-busy={isLive}
       style={style}
@@ -29,10 +29,10 @@ export const MemberCard = memo(function MemberCard({ role, member, style }: Memb
         member.status === "error" && "border-destructive/30",
       )}
     >
-      <header className="flex items-baseline justify-between gap-3">
+      <summary className="flex items-baseline justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold tracking-wide">{label}</h3>
-          <p className="mt-0.5 text-[11px] text-subtle">{tagline}</p>
+          <p className="mt-0.5 text-[11px] text-subtle">{tagline}</p><p className="mt-1 text-xs text-muted-foreground">{member.model}</p>
         </div>
         <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.14em] text-subtle">
           {member.status === "pending" ? (
@@ -47,10 +47,10 @@ export const MemberCard = memo(function MemberCard({ role, member, style }: Memb
           ) : member.status === "cancelled" ? (
             "Stopped"
           ) : (
-            <span className="text-destructive/80">Failed</span>
+            <span className="text-destructive/80">{/rate|limit|allowance/i.test(member.message??'')?'Rate limited':'Failed'}</span>
           )}
         </span>
-      </header>
+      </summary>
 
       <div className="mt-3 min-w-0 flex-1 text-[14px]">
         {member.text ? (
@@ -67,6 +67,6 @@ export const MemberCard = memo(function MemberCard({ role, member, style }: Memb
           </div>
         )}
       </div>
-    </article>
+    </details>
   );
 });

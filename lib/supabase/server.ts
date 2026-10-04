@@ -14,8 +14,8 @@ import { getSupabaseEnv } from "@/lib/supabase/env";
  * There is deliberately no service-role client anywhere in this codebase.
  */
 export async function createClient() {
-  const { url, publishableKey } = getSupabaseEnv();
   const cookieStore = await cookies();
+  const { url, publishableKey } = getSupabaseEnv();
 
   return createServerClient<Database>(url, publishableKey, {
     cookies: {

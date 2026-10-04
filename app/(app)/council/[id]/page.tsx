@@ -30,7 +30,9 @@ export default async function CouncilSessionPage({ params }: PageProps<"/council
 
   const members = emptyMembers(session.status === "running" ? "pending" : "cancelled");
   for (const opinion of opinions) {
-    members[opinion.role] = { text: opinion.content, status: opinion.status };
+    members[opinion.role] = { text: opinion.content,
+      model: opinion.model??undefined,
+      message:opinion.error_message??undefined, status: opinion.status };
   }
 
   const initial: CouncilState = {

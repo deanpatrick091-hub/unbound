@@ -3,6 +3,7 @@ import type { ProviderId } from "./types";
 /** Public descriptions only. A connection appears in the picker after server checks. */
 export const PROVIDER_DIRECTORY: { id: ProviderId; label: string; allowance: string }[] = [
   ...Object.entries(ADDITIONAL_CHAT).map(([id,p])=>({id:id as ProviderId,label:p.label,allowance:p.allowance})),
+  { id: "kilo",label:"Kilo",allowance:"Only verified zero-priced free models; 200 requests/hour per shared IP. Some free providers retain prompts." },
   { id: "openrouter", label: "OpenRouter", allowance: "Live zero-priced chat models. Shared request limits apply." },
   { id: "gemini", label: "Google Gemini", allowance: "Gemma 4 is free. Flash models require a verified Gemini Free-tier account." },
   { id: "groq", label: "Groq", allowance: "Fast chat models with a recurring free allowance." },

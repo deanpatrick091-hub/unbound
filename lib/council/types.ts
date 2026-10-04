@@ -22,6 +22,7 @@ export const COUNCIL_MEMBERS: Record<CouncilRole, { label: string; tagline: stri
 export interface CouncilRequestBody {
   question: string;
   model?: string;
+  seatModels?: Partial<Record<PerspectiveRole,string>>;
 }
 
 export const COUNCIL_LIMITS = {
@@ -31,6 +32,7 @@ export const COUNCIL_LIMITS = {
 
 /** NDJSON events streamed from POST /api/council. */
 export type CouncilStreamEvent =
+  | {type:"member_model";role:CouncilRole;model:string}
   | { type: "session"; sessionId: string; title: string; model: string; persisted: boolean }
   | { type: "phase"; phase: "perspectives" | "judge" }
   | { type: "delta"; role: CouncilRole; text: string }

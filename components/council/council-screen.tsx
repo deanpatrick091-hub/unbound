@@ -20,7 +20,8 @@ interface CouncilScreenProps {
 
 export function CouncilScreen({ model, initial }: CouncilScreenProps) {
   const router = useRouter();
-  const { refreshCouncil } = useShell();
+  const { refreshCouncil,models } = useShell();
+  const [seatModels,setSeatModels]=useState<Record<string,string>>(()=>Object.fromEntries(PERSPECTIVE_ROLES.map((role,i)=>[role,models[i%Math.max(1,models.length)]?.id??model])));
   const [selectedModel, setSelectedModel] = useState(model);
 
   const onSessionCreated = useCallback((session: { id: string }) => {
@@ -52,7 +53,7 @@ export function CouncilScreen({ model, initial }: CouncilScreenProps) {
       <div className="scrollbar-thin flex-1 overflow-y-auto overscroll-contain">
         <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6">
           {!started ? (
-            <Intro />
+            <><Intro/><div className="grid gap-3 sm:grid-cols-2">{PERSPECTIVE_ROLES.map(role=><label key={role} className="text-xs">{COUNCIL_MEMBERS[role].label}<select className="platform-input mt-2 w-full" value={seatModels[role]} onChange={e=>setSeatModels(v=>({...v,[role]:e.target.value}))}>{models.map(m=><option key={m.id} value={m.id}>{m.provider} · {m.label}</option>)}</select></label>)}</div><p className="mt-3 text-xs text-subtle">Choose the judge model in the question bar below.</p></>
           ) : (
             <div className="space-y-6">
               <section aria-label="Question" className="animate-rise-in">
@@ -83,7 +84,7 @@ export function CouncilScreen({ model, initial }: CouncilScreenProps) {
                 <header className="flex items-center gap-2.5">
                   <Gavel aria-hidden="true" className="size-4 text-brand" />
                   <h2 className="text-sm font-semibold tracking-wide">{COUNCIL_MEMBERS.judge.label}</h2>
-                  <StatusPill member={state.members.judge} phase={state.phase} />
+                  <span className="text-xs text-subtle">{state.members.judge.model}</span><StatusPill member={state.members.judge} phase={state.phase} />
                 </header>
                 <div className="mt-4">
                   {state.members.judge.text ? (
@@ -132,7 +133,7 @@ export function CouncilScreen({ model, initial }: CouncilScreenProps) {
           isBusy={isRunning}
           model={selectedModel}
           onModelChange={setSelectedModel}
-          onSend={(q) => void council.submit(q, selectedModel)}
+          onSend={(q) => void council.submit(q, selectedModel,seatModels)}
           onStop={council.stop}
           placeholder={initial ? "Ask the Council a new question…" : "Bring a decision to the Council…"}
           maxLength={COUNCIL_LIMITS.maxQuestionLength}

@@ -62,6 +62,8 @@ export type CouncilSessionRow = {
 };
 
 export type CouncilOpinionRow = {
+  model: string|null;
+  error_message: string|null;
   id: string;
   session_id: string;
   user_id: string;

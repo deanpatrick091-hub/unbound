@@ -83,6 +83,10 @@ export async function POST(request: NextRequest): Promise<Response> {
     return errorResponse(400, "invalid_request", "This model is not in the current free model library. Choose another model.");
   }
 
+  const seatModels:Record<string,string>={};
+  for(const role of PERSPECTIVE_ROLES){const choice=isRecord(body.seatModels)&&typeof body.seatModels[role]==='string'?body.seatModels[role] as string:model;
+   if(!(await getAvailableModel(choice)))return errorResponse(400,'invalid_request','Choose an available free model for every Council seat.');seatModels[role]=choice;
+  }
   const limit = await consumeRequest(supabase, "council");
   if (!limit.allowed) return limitResponse(limit);
 
@@ -90,7 +94,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   // won't appear in Council history.
   const title = titleFromContent(question.data);
   let sessionId: string;
-  let persisted = true;
+  const persisted = true;
   try {
     const session = await createCouncilSession(supabase, {
       userId: user.id,
@@ -101,8 +105,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     sessionId = session.id;
   } catch (error) {
     console.warn("[council] storage unavailable — running without persistence:", error);
-    sessionId = crypto.randomUUID();
-    persisted = false;
+    return errorResponse(503,"storage_error","Council history is unavailable. Please retry before starting.");
   }
 
   const abort = new AbortController();
@@ -137,8 +140,12 @@ export async function POST(request: NextRequest): Promise<Response> {
         let status: MessageStatus = "complete";
         let message: string | undefined;
 
+        let actualModel=role==='judge'?model:seatModels[role];
+        send({type:'member_model',role,model:actualModel});
+        try {
         for await (const event of streamGeneration({
-          model,
+          model:actualModel,
+          maxTokens:role==='judge'?1800:1200,
           systemInstruction: instructionFor(role),
           turns: [{ role: "user", content: input }],
           signal: AbortSignal.any([abort.signal, request.signal]),
@@ -151,7 +158,7 @@ export async function POST(request: NextRequest): Promise<Response> {
             status = event.code === "aborted" ? "cancelled" : "error";
             message = event.message;
           } else if (event.type === "fallback") {
-            // Another free model is answering for this seat; nothing to show.
+            actualModel=event.to;send({type:'member_model',role,model:actualModel});
           } else if (event.usage) {
             totalUsage.promptTokens += event.usage.promptTokens;
             totalUsage.completionTokens += event.usage.completionTokens;
@@ -165,13 +172,14 @@ export async function POST(request: NextRequest): Promise<Response> {
             });
           }
         }
+        }catch{status='error';message='This model could not respond. Other Council members can continue.';}
         if (abort.signal.aborted) status = "cancelled";
         if (status === "complete" && text.length === 0) {
           status = "error";
           message = "No response was produced.";
         }
 
-        if (persisted) await upsertCouncilOpinion(supabase, { sessionId, userId, role, content: text, status });
+        if (persisted) {try{await upsertCouncilOpinion(supabase, { sessionId, userId, role, content: text, status,model:actualModel,message });}catch{status='error';message='This response could not be saved. Please retry.';}}
         send({ type: "member_done", role, status, message });
         return { role, text, status };
       };

@@ -77,7 +77,7 @@ export async function setCouncilSessionStatus(
 
 export async function upsertCouncilOpinion(
   supabase: ServerSupabaseClient,
-  input: { sessionId: string; userId: string; role: CouncilRole; content: string; status: MessageStatus },
+  input: { sessionId: string; userId: string; role: CouncilRole; content: string; status: MessageStatus; model?:string; message?:string },
 ): Promise<void> {
   const { error } = await supabase.from("council_opinions").upsert(
     {
@@ -85,11 +85,13 @@ export async function upsertCouncilOpinion(
       user_id: input.userId,
       role: input.role,
       content: input.content,
+      model:input.model,
+      error_message:input.message,
       status: input.status,
     },
     { onConflict: "session_id,role" },
   );
-  if (error) console.error("[council] opinion save failed:", error.message);
+  if (error) throw new Error("Council response could not be saved.");
 }
 
 export async function deleteCouncilSession(

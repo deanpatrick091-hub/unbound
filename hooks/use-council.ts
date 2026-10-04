@@ -60,7 +60,7 @@ export function useCouncil(options: UseCouncilOptions = {}) {
   }, []);
 
   const submit = useCallback(
-    async (question: string, model?: string) => {
+    async (question: string, model?: string, seatModels?:Record<string,string>) => {
       const trimmed = question.trim();
       if (!trimmed || isRunning) return;
 
@@ -84,7 +84,7 @@ export function useCouncil(options: UseCouncilOptions = {}) {
         const response = await fetch("/api/council", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: trimmed, model }),
+          body: JSON.stringify({ question: trimmed, model, seatModels }),
           signal: controller.signal,
         });
 
@@ -111,6 +111,9 @@ export function useCouncil(options: UseCouncilOptions = {}) {
             case "phase":
               setState((prev) => ({ ...prev, phase: event.phase }));
               if (event.phase === "judge") patchMember("judge", { status: "streaming" });
+              break;
+            case "member_model":
+              patchMember(event.role,{model:event.model});
               break;
             case "delta":
               appendMember(event.role, event.text);
