@@ -1,5 +1,6 @@
 import "server-only";
-import { getAvailableModel, getAvailableModels, invalidateModelCache, OPENROUTER_FREE_ROUTER_ID } from "@/lib/ai/discovery";
+import {rankFallbacks} from "@/lib/ai/routing";
+import { getAvailableModel, getAvailableModels, invalidateModelCache } from "@/lib/ai/discovery";
 import { isFallbackCandidate, markHealthy, markProviderQuotaExhausted, markRateLimited, markRestricted, markSoftFailure } from "@/lib/ai/health";
 import { parseModelId, qualifyModelId } from "@/lib/ai/models";
 import { streamOpenAICompatible } from "@/lib/ai/openai-compatible";
@@ -22,14 +23,14 @@ export async function* streamGeneration(options: GenerationOptions): AsyncGenera
   });
 }
 
-/** Never changes providers silently, never retries after output, never uses paid models. */
+/** Announces every model/provider switch, never retries after output, never uses paid models. */
 export async function* streamWithFallback(options: GenerationOptions): AsyncGenerator<GenerationEvent> {
   const tried = new Set<string>();
   let current = qualifyModelId(options.model);
   const deadline = new AbortController();
-  const deadlineTimer = setTimeout(() => deadline.abort(), 52_000);
+  const deadlineTimer = setTimeout(() => deadline.abort(), options.longRunning ? 285_000 : 110_000);
   try {
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       if (options.signal?.aborted || deadline.signal.aborted) {
         yield { type: "error", code: options.signal?.aborted ? "aborted" : "upstream_error", message: options.signal?.aborted ? "The request was cancelled." : "The free model took too long. Please try again." }; return;
       }
@@ -38,7 +39,7 @@ export async function* streamWithFallback(options: GenerationOptions): AsyncGene
       const signal = AbortSignal.any([controller.signal, deadline.signal, ...(options.signal ? [options.signal] : [])]);
       let started = false;
       let error: Extract<GenerationEvent, { type: "error" }> | undefined;
-      const timer = setTimeout(() => controller.abort(), 15_000);
+      const timer = setTimeout(() => controller.abort(), options.longRunning ? 120_000 : 30_000);
       try {
         for await (const event of streamGeneration({ ...options, model: current, signal })) {
           if (event.type === "text" && event.text) { started = true; clearTimeout(timer); yield event; }
@@ -53,20 +54,18 @@ export async function* streamWithFallback(options: GenerationOptions): AsyncGene
       } finally { clearTimeout(timer); controller.abort(); }
       if (options.signal?.aborted) { yield { type: "error", code: "aborted", message: "The request was cancelled." }; return; }
       error ??= { type: "error", code: "upstream_error", message: "The model ended without completing a response." };
-      if (deadline.signal.aborted) { yield { type: "error", code: "upstream_error", message: "The request timed out. Try a different free model." }; return; }
+      if (deadline.signal.aborted) { yield { type: "error", code: "upstream_error", message: "The hosting execution window ended. Your saved work is safe. Retry with a smaller change." }; return; }
       if (error.code === "aborted") error = { type: "error", code: "upstream_error", message: "The model did not start replying in time." };
-      if (started || ["content_blocked", "invalid_request", "not_configured"].includes(error.code)) { yield error; return; }
+      if (started || ["content_blocked"].includes(error.code)) { yield error; return; }
       const provider = parseModelId(current).provider;
       if (error.code === "quota_exhausted") {
         markProviderQuotaExhausted(provider, "Free allowance reached; wait for the provider reset");
-        yield error; return;
       }
       if (error.code === "rate_limited") markRateLimited(current);
       else if (error.code !== "model_restricted") markSoftFailure(current, "A recent request failed");
-      const candidates = (await getAvailableModels()).filter(m => m.provider === provider && !tried.has(m.id) && isFallbackCandidate(m.id));
-      candidates.sort((a,b) => Number(b.model === OPENROUTER_FREE_ROUTER_ID) - Number(a.model === OPENROUTER_FREE_ROUTER_ID));
+      const candidates = rankFallbacks((await getAvailableModels()).filter(m => !tried.has(m.id) && isFallbackCandidate(m.id)), options.longRunning ? 'build' : 'chat', options.systemInstruction.length+options.turns.reduce((n,t)=>n+t.content.length,0), options.maxTokens??4096);
       const next = candidates[0];
-      if (!next || attempt === 2) { yield error; return; }
+      if (!next || attempt === 4) { yield error; return; }
       yield { type: "fallback", from: current, to: next.id, reason: error.message };
       current = next.id;
     }

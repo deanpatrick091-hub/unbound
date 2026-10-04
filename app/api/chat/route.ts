@@ -1,4 +1,3 @@
-import { getAvailableModel } from "@/lib/ai/discovery";
 import type { NextRequest } from "next/server";
 
 import { errorResponse, limitResponse, NDJSON_HEADERS } from "@/lib/api/responses";
@@ -17,8 +16,7 @@ import {
 } from "@/lib/data/conversations";
 import type { ConversationRow, MessageStatus } from "@/lib/data/types";
 import { streamWithFallback, type GenerationTurn } from "@/lib/ai/generate";
-import { parseModelId, resolveModel } from "@/lib/ai/models";
-import { isProviderEnabled, providerNotConfiguredMessage } from "@/lib/ai/providers";
+import { resolveModel } from "@/lib/ai/models";
 import { consumeRequest } from "@/lib/limits/consume";
 
 // Gemini responses can run longer than the default serverless timeout.
@@ -65,15 +63,6 @@ export async function POST(request: NextRequest): Promise<Response> {
     requestedModel,
     conversation?.model ?? (await getDefaultModelFor(supabase, user.id)),
   );
-  const { provider } = parseModelId(model);
-  if (!isProviderEnabled(provider)) {
-    return errorResponse(400, "not_configured", providerNotConfiguredMessage(provider));
-  }
-
-  if (!(await getAvailableModel(model))) {
-    return errorResponse(400, "invalid_request", "This model is not in the current free model library. Choose another model.");
-  }
-
   // Usage protection — server-side and atomic when available. An unreachable
   // limiter lets the request through (logged); an over-budget verdict does not.
   const limit = await consumeRequest(supabase, "chat");
@@ -219,6 +208,7 @@ export async function POST(request: NextRequest): Promise<Response> {
               status,
             });
             assistantMessageId = saved.id;
+            if (status === "complete" && usedModel !== model) await updateConversationModel(supabase, conversationId, usedModel);
           } catch (error) {
             console.warn("[chat] assistant persistence failed:", error);
           }

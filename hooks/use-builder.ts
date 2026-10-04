@@ -165,9 +165,11 @@ export function useBuilder(options: { userId: string; model: string; project: Pr
               setWriting(null);
               break;
             case "model_switched": {
+              modelRef.current = event.to;
+              setModelState(event.to);
               const from = describeModel(event.from);
               const to = describeModel(event.to);
-              const note = `${from.label} was rate-limited — built by ${to.providerLabel} · ${to.label} instead.`;
+              const note = `${from.label} was unavailable — switching to ${to.providerLabel} · ${to.label}.`;
               commitMessages((prev) => prev.map((m) => (m.id === assistant.id ? { ...m, note } : m)));
               break;
             }

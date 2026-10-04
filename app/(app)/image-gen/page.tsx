@@ -1,6 +1,3 @@
-import { ImageStudio } from "@/components/images/image-studio";
-import { isProviderEnabled } from "@/lib/ai/providers";
-
-export default function ImageGenPage() {
-  return <ImageStudio connected={isProviderEnabled("cloudflare")} />;
-}
+import {ImageStudio} from '@/components/images/image-studio';
+import {imageProviders} from '@/lib/images/providers';
+export default function ImageGenPage(){return <ImageStudio providers={imageProviders()}/>;}

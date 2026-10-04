@@ -112,3 +112,33 @@ test('Kilo discovery admits only explicitly free IDs with every price zero',asyn
  try{assert.deepEqual((await getAvailableModels()).filter(m=>m.provider==='kilo').map(m=>m.id),['kilo:safe/model:free']);}
  finally{globalThis.fetch=original;invalidateModelCache();}
 });
+
+test('exhausted provider switches across providers and streams a successful response', async () => {
+ const {streamWithFallback}=await import('../lib/ai/generate.ts');
+ const {invalidateModelCache}=await import('../lib/ai/discovery.ts');
+ const {markHealthy}=await import('../lib/ai/health.ts');
+ const original=globalThis.fetch, old=process.env.OPENROUTER_API_KEY;
+ process.env.OPENROUTER_API_KEY='test';invalidateModelCache();
+ const calls=[];
+ globalThis.fetch=async(url,init)=>{
+  if(!String(url).endsWith('/chat/completions'))return Response.json({data:[{id:String(url).includes('kilo.ai')?'coding/qwen-coder:free':'test/free',pricing:{prompt:'0',completion:'0'},context_length:128000}]});
+  calls.push(JSON.parse(init.body).model);
+  if(String(url).includes('openrouter.ai'))return Response.json({error:{message:'Credits exhausted'}},{status:402});
+  return new Response('data: {"choices":[{"delta":{"content":"Recovered"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+ };
+ try{
+  const events=[];for await(const e of streamWithFallback({...options,longRunning:true}))events.push(e);
+  assert.deepEqual(events.map(e=>e.type),['fallback','text','done']);
+  assert.equal(events[0].to,'kilo:coding/qwen-coder:free');
+  assert.deepEqual(calls,['test/free','coding/qwen-coder:free']);
+ }finally{globalThis.fetch=original;if(old===undefined)delete process.env.OPENROUTER_API_KEY;else process.env.OPENROUTER_API_KEY=old;markHealthy('openrouter:test/free');invalidateModelCache();}
+});
+
+test('an unconfigured selected provider automatically uses a configured free model',async()=>{
+ const {streamWithFallback}=await import('../lib/ai/generate.ts');
+ const {invalidateModelCache}=await import('../lib/ai/discovery.ts');
+ const original=globalThis.fetch;invalidateModelCache();
+ globalThis.fetch=async(url)=>String(url).endsWith('/chat/completions')?new Response('data: {"choices":[{"delta":{"content":"Available"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'):Response.json({data:String(url).includes('kilo.ai')?[{id:'working/model:free',pricing:{prompt:'0',completion:'0'}}]:[]});
+ try{const events=[];for await(const e of streamWithFallback({...options,model:'cerebras:unconfigured'}))events.push(e);assert.deepEqual(events.map(e=>e.type),['fallback','text','done']);assert.equal(events[0].to,'kilo:working/model:free');}
+ finally{globalThis.fetch=original;invalidateModelCache();}
+});

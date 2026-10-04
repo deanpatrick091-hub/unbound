@@ -57,6 +57,7 @@ export interface GenerationOptions {
   turns: GenerationTurn[];
   signal?: AbortSignal;
   temperature?: number;
+  longRunning?: boolean;
   /** Output budget hint; adapters clamp it to what the provider allows. */
   maxTokens?: number;
   /** Called when the provider reports the model no longer exists. */

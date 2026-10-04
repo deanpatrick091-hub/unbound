@@ -1,11 +1,9 @@
 import {getProject,isUuid} from "@/lib/projects/server";
 import type {Json} from "@/lib/supabase/database.types";
-import { getAvailableModel } from "@/lib/ai/discovery";
 import type { NextRequest } from "next/server";
 
 import { streamWithFallback, type GenerationTurn } from "@/lib/ai/generate";
-import { parseModelId, resolveModel } from "@/lib/ai/models";
-import { isProviderEnabled, providerNotConfiguredMessage } from "@/lib/ai/providers";
+import { resolveModel } from "@/lib/ai/models";
 import { errorResponse, limitResponse, NDJSON_HEADERS } from "@/lib/api/responses";
 import { getSession } from "@/lib/auth/session";
 import { siteByteSize } from "@/lib/build/assemble";
@@ -26,7 +24,7 @@ import { insertUsage } from "@/lib/data/conversations";
 import { consumeRequest } from "@/lib/limits/consume";
 
 // Whole sites take longer than a chat turn.
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 type Parsed = { ok: true; data: BuildRequestBody } | { ok: false; message: string };
 
@@ -56,7 +54,7 @@ function parseBuildRequest(body: unknown): Parsed {
       if (!isRecord(item) || (item.role !== "user" && item.role !== "assistant") || typeof item.content !== "string") {
         return { ok: false, message: "history items are malformed." };
       }
-      const content = item.content.trim().slice(0, 2_000);
+      const content = item.content.trim();
       if (content) history.push({ role: item.role, content });
     }
   }
@@ -92,18 +90,9 @@ export async function POST(request: NextRequest): Promise<Response> {
   if(project.role==='viewer')return errorResponse(403,'invalid_request','This project is read-only.');
   if(project.revision!==body.revision)return errorResponse(409,'invalid_request','This project changed elsewhere. Reopen it before building.');
   const files=project.files;
-  const history=project.conversation.slice(-BUILD_LIMITS.contextTurns).map(m=>({role:m.role,content:m.content.slice(0,2000)}));
+  const history=project.conversation.slice(-BUILD_LIMITS.contextTurns).map(m=>({role:m.role,content:m.content}));
 
   const model = resolveModel(parsed.data.model, await getDefaultModelFor(supabase, user.id));
-  const { provider } = parseModelId(model);
-  if (!isProviderEnabled(provider)) {
-    return errorResponse(400, "not_configured", providerNotConfiguredMessage(provider));
-  }
-
-  if (!(await getAvailableModel(model))) {
-    return errorResponse(400, "invalid_request", "This model is not in the current free model library. Choose another model.");
-  }
-
   const limit = await consumeRequest(supabase, "build");
   if (!limit.allowed) return limitResponse(limit);
 
@@ -165,6 +154,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           signal: AbortSignal.any([abort.signal, request.signal]),
           temperature: 0.5,
           maxTokens: 16_000,
+          longRunning: true,
         })) {
           if (event.type === "text") {
             produced += event.text.length;

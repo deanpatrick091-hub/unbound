@@ -1,46 +1,14 @@
-"use client";
-import Image from "next/image";
-import { useRef, useState } from "react";
-import { Download, ImagePlus, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-
-export function ImageStudio({ connected }: { connected: boolean }) {
-  const [prompt, setPrompt] = useState("");
-  const [src, setSrc] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const pending = useRef(false);
-  async function generate() {
-    if (!connected || pending.current || !prompt.trim()) return;
-    pending.current = true; setBusy(true); setError("");
-    try {
-      const response = await fetch("/api/images", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: prompt.trim() }), signal: AbortSignal.timeout(55000) });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error?.message || "Image generation is temporarily unavailable.");
-      setSrc(data.src);
-    } catch (error) { setError(error instanceof Error ? error.message : "Please try again."); }
-    finally { pending.current = false; setBusy(false); }
-  }
-  return <div className="scrollbar-thin flex-1 overflow-y-auto"><div className="mx-auto max-w-5xl px-5 py-10 sm:px-10">
-    <p className="text-sm uppercase tracking-[0.22em] text-muted-foreground">Image studio</p>
-    <h1 className="mt-3 text-4xl font-medium tracking-tight">From a thought to a frame.</h1>
-    <p className="mt-3 max-w-xl text-muted-foreground">Explore FLUX.1 Schnell with the connected Cloudflare free allowance.</p>
-    {!connected && <div className="glass-panel mt-7 rounded-2xl p-5 text-sm" role="status">Image generation is waiting for a free connection. The site owner needs to connect a Cloudflare Workers Free account. Chat and the model library are still available.</div>}
-    <div className="mt-8 grid gap-6 md:grid-cols-[1fr_1.2fr]">
-      <div className="glass-panel self-start rounded-3xl p-5">
-        <label htmlFor="image-prompt" className="mb-3 block text-sm font-medium">Describe your image</label>
-        <Textarea id="image-prompt" value={prompt} maxLength={2048} onChange={e => setPrompt(e.target.value)} placeholder="A quiet observatory above a sea of clouds, silver light, cinematic photography…" rows={6} disabled={busy || !connected} />
-        <p className="mt-3 text-xs text-muted-foreground">FLUX.1 Schnell · Daily free allowance applies</p>
-        <Button className="mt-5 w-full" disabled={!connected || busy || !prompt.trim()} onClick={generate}>{busy ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}{busy ? "Creating your image…" : "Generate image"}</Button>
-        {error && <p className="mt-4 text-sm text-destructive" role="alert">{error}</p>}
-      </div>
-      <div className="glass-panel overflow-hidden rounded-3xl">
-        <div className="flex aspect-square items-center justify-center p-3" aria-busy={busy}>
-          {src ? <Image unoptimized width={512} height={512} src={src} alt={prompt} className="size-full rounded-2xl object-contain" /> : <div className="text-center text-muted-foreground"><ImagePlus className="mx-auto mb-4 size-10" /><p>Your imagination goes here.</p></div>}
-        </div>
-        {src && <a href={src} download="unbound-flux.jpg" className="flex items-center justify-center gap-2 border-t p-4 text-sm hover:bg-accent"><Download className="size-4" />Download image</a>}
-      </div>
-    </div>
-  </div></div>;
+'use client';
+import Image from 'next/image';
+import {useEffect,useRef,useState} from 'react';
+import {Download,ImagePlus,Loader2} from 'lucide-react';
+import {Button} from '@/components/ui/button';
+import {Textarea} from '@/components/ui/textarea';
+type SavedImage={id:string;prompt:string;provider:string;mime_type:string;created_at:string};
+export function ImageStudio({providers}:{providers:{id:string;name:string;notice:string}[]}){
+ const [provider,setProvider]=useState(providers[0]?.id??'');const [prompt,setPrompt]=useState('');const [src,setSrc]=useState('');const [caption,setCaption]=useState('');const [mime,setMime]=useState('image/png');const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [images,setImages]=useState<SavedImage[]>([]);const [note,setNote]=useState('');const pending=useRef(false);
+ async function history(){const r=await fetch('/api/images');const data=await r.json();if(r.ok)setImages(data.images);else setNote('Image history could not be loaded.');}
+ useEffect(()=>{let live=true;fetch('/api/images').then(r=>{if(!r.ok)throw Error();return r.json();}).then(d=>{if(live)setImages(d.images);}).catch(()=>{if(live)setNote('Image history could not be loaded.');});return()=>{live=false;};},[]);
+ async function generate(){if(pending.current||!prompt.trim()||!provider)return;pending.current=true;setBusy(true);setError('');setNote('');try{const r=await fetch('/api/images',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,provider})});const data=await r.json();if(!r.ok)throw Error(data.error?.message||'Image generation failed.');setSrc(data.src);setMime(data.mime);setCaption(prompt);setNote(data.warning||'Saved to your image history.');if(data.provider&&data.provider!==provider){setProvider(data.provider);setNote('Automatically switched image provider. '+(data.warning||'Saved to your image history.'));}await history().catch(()=>setNote("Your image is ready, but history could not be refreshed."));}catch(e){setError(e instanceof Error?e.message:'Please retry.');}finally{pending.current=false;setBusy(false);}}
+ return <div className="scrollbar-thin flex-1 overflow-y-auto"><div className="mx-auto max-w-5xl px-5 py-10 sm:px-10"><p className="text-sm uppercase tracking-[.22em] text-muted-foreground">Image studio</p><h1 className="mt-3 text-4xl tracking-tight">From a thought to a frame.</h1>{!providers.length?<p className="platform-card mt-6">Image generation is temporarily unavailable. Your saved images remain below.</p>:<div className="mt-8 grid gap-6 md:grid-cols-[1fr_1.2fr]"><section className="platform-card self-start space-y-4"><label className="block text-sm">Image model<select className="platform-input mt-2 w-full" value={provider} disabled={busy} onChange={e=>setProvider(e.target.value)}>{providers.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><p className="text-xs text-muted-foreground">{providers.find(p=>p.id===provider)?.notice}</p><label htmlFor="image-prompt" className="block text-sm">Describe your image</label><Textarea id="image-prompt" rows={6} maxLength={4000} value={prompt} onChange={e=>setPrompt(e.target.value)} disabled={busy} placeholder="A quiet observatory above a sea of clouds…"/><Button className="w-full" disabled={busy||!prompt.trim()} onClick={()=>void generate()}>{busy?<Loader2 className="size-4 animate-spin"/>:<ImagePlus className="size-4"/>}{busy?'Generating…':error?'Retry image':'Generate image'}</Button>{error&&<p role="alert" className="text-sm text-destructive">{error}</p>}<p role="status" className="text-sm text-muted-foreground">{note}</p></section><section className="platform-card"><div className="flex aspect-square items-center justify-center" aria-busy={busy}>{src?<Image unoptimized width={512} height={512} src={src} alt={caption} className="size-full rounded-2xl object-contain"/>:<p className="text-sm text-muted-foreground">Your generated image will appear here.</p>}</div>{src&&<a className="platform-button mt-4" href={src} download={'unbound-image.'+(mime==='image/jpeg'?'jpg':mime.split('/')[1])}><Download className="size-4"/>Download</a>}</section></div>}<h2 className="mt-10 text-xl">Image history</h2><div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">{images.map(img=><button key={img.id} className="platform-card text-left" onClick={()=>{setSrc('/api/images/'+img.id);setCaption(img.prompt);setMime(img.mime_type);setPrompt(img.prompt);}}><Image unoptimized loading="lazy" width={256} height={256} src={'/api/images/'+img.id} alt={img.prompt} className="aspect-square w-full rounded-xl object-cover"/><p className="mt-2 line-clamp-2 text-xs">{img.prompt}</p></button>)}</div></div></div>;
 }

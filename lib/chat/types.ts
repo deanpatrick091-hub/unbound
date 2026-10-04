@@ -102,7 +102,7 @@ export interface ChatErrorResponse {
 
 export const CHAT_LIMITS = {
   /** Max characters in a single message. */
-  maxMessageLength: 8_000,
+  maxMessageLength: Number.POSITIVE_INFINITY,
   /** How many prior turns are sent to the model as context. */
   contextMessages: 40,
   /** Max characters of a generated conversation title. */

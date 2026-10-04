@@ -14,7 +14,7 @@ export function isSiteFileName(value: unknown): value is SiteFileName {
 }
 
 export const BUILD_LIMITS = {
-  maxInstructionLength: 4_000,
+  maxInstructionLength: Number.POSITIVE_INFINITY,
   /** Total bytes of site files accepted from the client / produced by the model. */
   maxSiteBytes: 400_000,
   /** Prior builder turns sent to the model as context. */

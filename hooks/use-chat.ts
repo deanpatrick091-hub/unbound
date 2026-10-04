@@ -153,9 +153,11 @@ export function useChat(options: UseChatOptions): UseChatResult {
               setStatus("streaming");
               break;
             case "model_switched": {
+              modelRef.current = event.to;
+              setModelState(event.to);
               const from = describeModel(event.from);
               const to = describeModel(event.to);
-              const note = `${from.label} was rate-limited — answered by ${to.providerLabel} · ${to.label} instead.`;
+              const note = `${from.label} was unavailable — switching to ${to.providerLabel} · ${to.label}.`;
               commit((prev) => prev.map((m) => (m.id === assistant.id ? { ...m, note } : m)));
               break;
             }
