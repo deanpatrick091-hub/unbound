@@ -64,7 +64,8 @@ export async function* streamWithFallback(options: GenerationOptions): AsyncGene
       if (error.code === "rate_limited") markRateLimited(current);
       else if (error.code !== "model_restricted") markSoftFailure(current, "A recent request failed");
       const candidates = rankFallbacks((await getAvailableModels()).filter(m => !tried.has(m.id) && isFallbackCandidate(m.id)), options.longRunning ? 'build' : 'chat', options.systemInstruction.length+options.turns.reduce((n,t)=>n+t.content.length,0), options.maxTokens??4096);
-      const next = candidates[0];
+      // A different provider avoids a shared account limit affecting every model.
+      const next = candidates.find(m => m.provider !== provider) ?? candidates[0];
       if (!next || attempt === 4) { yield error; return; }
       yield { type: "fallback", from: current, to: next.id, reason: error.message };
       current = next.id;

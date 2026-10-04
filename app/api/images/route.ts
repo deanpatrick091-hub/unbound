@@ -18,7 +18,7 @@ export async function POST(request:Request){
  let body;try{body=await request.json();}catch{return errorResponse(400,'invalid_request','Enter an image description.');}
  const prompt=body?.prompt;const provider=body?.provider??imageProviders()[0]?.id;
  if(typeof prompt!=='string'||!prompt.trim()||prompt.length>4000)return errorResponse(400,'invalid_request','Use an image description between 1 and 4,000 characters.');
- if(!imageProviders().some(p=>p.id===provider))return errorResponse(503,'not_configured','No image connection is available right now.');
+ if(!imageProviders().length)return errorResponse(503,'not_configured','No image connection is available right now.');
  const projectId=body.projectId??null;
  if(projectId){const p=isUuid(projectId)?await getProject(projectId):null;if(!p||p.role==='viewer')return errorResponse(403,'invalid_request','You cannot save images to this project.');}
  const limit=await consumeRequest(supabase,'build');if(!limit.allowed)return limitResponse(limit);if(limit.degraded)return errorResponse(503,'upstream_error','The usage check is temporarily unavailable.');
