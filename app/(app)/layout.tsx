@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { AppShell } from "@/components/shell/app-shell";
 import { ShellProvider } from "@/components/shell/shell-context";
 import { getAvailableModels } from "@/lib/ai/discovery";
@@ -12,6 +13,14 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   // disabled — say so plainly rather than sending anyone to a login that
   // no longer exists.
   const { supabase, user } = await getSession();
+  let accountHandle: {display_name: string} | null = null;
+  if (process.env.USERNAME_AUTH_ENABLED === "true") {
+    const { data: { user: identity } } = await supabase.auth.getUser();
+    if (!identity || identity.is_anonymous) redirect("/login");
+    const { data: handle } = await supabase.from("user_handles").select("display_name").eq("user_id", identity.id).maybeSingle();
+    if (!handle) redirect("/login");
+    accountHandle = handle;
+  }
   if (!user) {
     return (
       <div className="flex min-h-dvh items-center justify-center px-6">
@@ -35,7 +44,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
 
   return (
     <ShellProvider
-      user={{ id: user.id, email: user.email, displayName: profile?.display_name ?? null }}
+      user={{ id: user.id, email: user.email?.endsWith("@accounts.unbound.invalid") ? null : user.email, displayName: profile?.display_name ?? accountHandle?.display_name ?? null }}
       models={models}
       initialConversations={conversations}
       initialCouncilSessions={councilSessions}

@@ -3,8 +3,8 @@
  *
  * Both values are intentionally NEXT_PUBLIC_: the project URL and the
  * *publishable* key are designed to ship to the browser — Row Level Security
- * is what protects data, not key secrecy. The service-role key must never be
- * referenced here or anywhere in this codebase.
+ * is what protects data, not key secrecy. Privileged keys must never be
+ * referenced in this client-safe module.
  */
 export function getSupabaseEnv(): { url: string; publishableKey: string } {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim().replace(/\/$/, "");

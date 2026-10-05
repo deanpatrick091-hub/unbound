@@ -52,7 +52,7 @@ export default async function SettingsPage() {
 
           <Section title="This browser" description="How your workspace is kept.">
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Your conversations and builds are private to your account. Guest sessions belong to this browser until you link an email. Clearing browser data before linking can lose access to your guest workspace.
+              Your conversations and builds are private to your account. Create a username and password to keep access across devices. Your username is managed above. Keep your password safe; username-only accounts do not yet support password recovery.
             </p>
           </Section>
         </div>
