@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Check, Loader2, Pencil, Trash2, X } from "lucide-react";
 
 import { useShell, type ConversationSummary } from "@/components/shell/shell-context";
+import { PinButton } from '@/components/projects/pin-button';
 import { cn } from "@/lib/utils";
 
 interface ConversationItemProps {
@@ -125,14 +126,14 @@ export function ConversationItem({ conversation, active, onNavigate }: Conversat
             href={`/c/${conversation.id}`}
             onClick={onNavigate}
             aria-current={active ? "page" : undefined}
-            className="block truncate rounded-md py-2 pr-16 pl-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="block truncate rounded-md py-2 pr-24 pl-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
             title={conversation.title}
           >
             {conversation.title}
           </Link>
           <div
             className={cn(
-              "absolute inset-y-0 right-1 flex items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100",
+              "absolute inset-y-0 right-1 flex items-center gap-0.5 opacity-100 sm:opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100",
               mode === "working" && "opacity-100",
             )}
           >
@@ -142,6 +143,7 @@ export function ConversationItem({ conversation, active, onNavigate }: Conversat
               </span>
             ) : (
               <>
+                <PinButton compact kind="chat" id={conversation.id}/>
                 <IconButton label={`Rename “${conversation.title}”`} onClick={startRename}>
                   <Pencil className="size-3.5" />
                 </IconButton>

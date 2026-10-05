@@ -9,7 +9,7 @@ import {getProject,isUuid} from '@/lib/projects/server';
 export const maxDuration=120;
 export async function GET(){
  const {supabase,user}=await getSession();if(!user)return errorResponse(401,'unauthorized','Sign in to continue.');
- const {data,error}=await supabase.from('project_assets').select('id,prompt,provider,mime_type,created_at,project_id').eq('owner_id',user.id).order('created_at',{ascending:false}).limit(30);
+ const {data,error}=await supabase.from('project_assets').select('id,prompt,provider,mime_type,created_at,project_id').eq('owner_id',user.id).is('history_deleted_at',null).order('created_at',{ascending:false}).limit(30);
  if(error)return errorResponse(503,'storage_error','Image history could not be loaded.');
  return Response.json({images:data},{headers:{'Cache-Control':'private, no-store'}});
 }

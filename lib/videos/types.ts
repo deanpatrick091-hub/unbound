@@ -1,0 +1,1 @@
+export type VideoJob={id:string;owner_id:string;project_id:string|null;prompt:string;aspect_ratio:'16:9'|'9:16';status:'queued'|'running'|'complete'|'failed'|'cancelled';provider:string;model:string|null;storage_path:string|null;error:string|null;created_at:string;hidden_at:string|null};

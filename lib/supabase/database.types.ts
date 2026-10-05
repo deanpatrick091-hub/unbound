@@ -1,3 +1,4 @@
+import type {VideoJob} from '@/lib/videos/types';
 import type { ProjectRow,HandleRow,MemberRow,InviteRow,FileRow,VersionRow,AssetRow,PinRow,IntegrationJobRow } from '@/lib/projects/types';
 /**
  * Hand-maintained mirror of supabase/migrations. Keep in sync when the schema
@@ -104,6 +105,7 @@ type Table<Row, Required extends keyof Row = never> = {
 export type Database = {
   public: {
     Tables: {
+      video_jobs: Table<VideoJob,'owner_id'|'prompt'|'aspect_ratio'>;
       projects: Table<ProjectRow, 'owner_id'|'model'>;
       user_handles: Table<HandleRow, 'user_id'|'username'|'display_name'>;
       project_members: Table<MemberRow, 'project_id'|'user_id'|'role'>;

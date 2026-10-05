@@ -1,10 +1,11 @@
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseEnv } from '@/lib/supabase/env';
+import { isSameOrigin } from '@/lib/auth/same-origin';
 export const maxDuration = 60;
 export async function POST(request: Request) {
   const respond = (status: number, error: string) => Response.json({ error }, { status, headers: { 'Cache-Control': 'no-store' } });
   if (process.env.USERNAME_AUTH_ENABLED !== 'true') return respond(503, 'Username sign-in is not enabled yet.');
-  if (request.headers.get('origin') !== new URL(request.url).origin) return respond(403, 'Reload this page before continuing.');
+  if (!isSameOrigin(request)) return respond(403, 'Reload this page before continuing.');
   try {
     const raw = await request.text();
     if (raw.length > 6000) return respond(400, 'The account request is too large.');

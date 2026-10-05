@@ -61,7 +61,7 @@ export function CouncilScreen({ model, initial }: CouncilScreenProps) {
                 <p className="mt-2 text-lg leading-relaxed text-foreground sm:text-xl">{state.question}</p>
               </section>
 
-              <section aria-label="Perspectives" className="grid gap-3 sm:grid-cols-2">
+              <section aria-label="Perspectives" className="divide-y">
                 {PERSPECTIVE_ROLES.map((role, i) => (
                   <MemberCard
                     key={role}
@@ -75,7 +75,7 @@ export function CouncilScreen({ model, initial }: CouncilScreenProps) {
               <section
                 aria-label="Final Judge"
                 className={cn(
-                  "rounded-xl border p-5 transition-colors sm:p-6",
+                  "border-t py-6 transition-colors",
                   state.members.judge.status === "streaming" || state.members.judge.status === "complete"
                     ? "border-brand/30 bg-[linear-gradient(180deg,oklch(0.82_0.09_75_/_0.06),transparent_60%)]"
                     : "border-border bg-surface/60",
@@ -179,22 +179,5 @@ function StatusPill({ member, phase }: { member: CouncilState["members"]["judge"
 }
 
 function Intro() {
-  return (
-    <div className="mx-auto max-w-2xl py-6 text-center animate-rise-in sm:py-12">
-      <p className="text-[11px] font-medium uppercase tracking-[0.3em] text-subtle">UNBOUND Council</p>
-      <h2 className="mt-4 text-2xl font-medium tracking-tight sm:text-[28px]">Five seats. One verdict.</h2>
-      <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-        Four independent perspectives examine your question in parallel. The Final Judge weighs them and
-        delivers a decision with reasoning, caveats, and next steps.
-      </p>
-      <ul className="mt-8 grid gap-2 text-left sm:grid-cols-2">
-        {PERSPECTIVE_ROLES.map((role) => (
-          <li key={role} className="rounded-lg border bg-surface/60 px-4 py-3">
-            <p className="text-sm font-medium">{COUNCIL_MEMBERS[role].label}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">{COUNCIL_MEMBERS[role].tagline}</p>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
+  return <div className="py-5"><h2 className="text-lg font-medium">A question. Several perspectives.</h2><p className="mt-2 text-sm text-muted-foreground">Choose your council, then ask below.</p></div>;
 }

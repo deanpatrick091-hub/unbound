@@ -3,8 +3,9 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Pin, Search, Hammer, Image as ImageIcon, MessageSquare, Plus, Settings, Users } from "lucide-react";
+import { Video, Search, Hammer, Image as ImageIcon, MessageSquare, Plus, Settings, Users } from "lucide-react";
 
+import { SidebarPins } from '@/components/shell/sidebar-pins';
 import { ConversationItem } from "@/components/shell/conversation-item";
 import { CouncilItem } from "@/components/shell/council-item";
 import { useShell } from "@/components/shell/shell-context";
@@ -48,10 +49,12 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         <NavTile href="/" icon={Plus} label="New chat" active={pathname === "/" || pathname.startsWith("/c/")} onClick={onNavigate} />
         <NavTile href="/council" icon={Users} label="Council" active={area === "council"} onClick={onNavigate} />
         <NavTile href="/image-gen" icon={ImageIcon} label="Image Gen" active={area === "image"} onClick={onNavigate} />
-        <NavTile href="/pinned" icon={Pin} label="Pinned" active={pathname === "/pinned"} onClick={onNavigate} />
+        <NavTile href="/video-gen" icon={Video} label="Videos" active={pathname === "/video-gen"} onClick={onNavigate} />
         <NavTile href="/tools" icon={Search} label="Tools" active={pathname === "/tools"} onClick={onNavigate} />
         <NavTile href="/build" icon={Hammer} label="Build" active={area === "build"} onClick={onNavigate} />
       </div>
+
+      <SidebarPins onNavigate={onNavigate}/>
 
       {area === "image" ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">

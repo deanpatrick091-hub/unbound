@@ -324,7 +324,7 @@
 }
 
 /* Restrained silver material shared across persistent workspaces. */
-.platform-card { border:1px solid var(--border); border-radius:20px; padding:1.4rem; background:var(--surface); box-shadow:inset 0 1px 0 #ffffff16,0 14px 45px -35px #0008; }
+.platform-card { border:1px solid var(--border); border-radius:14px; padding:1rem; background:var(--surface); box-shadow:inset 0 1px 0 #ffffff10; }
 .platform-button { display:inline-flex; align-items:center; justify-content:center; gap:.4rem; min-height:34px; padding:.45rem .7rem; border:1px solid var(--border); border-radius:10px; font-size:.75rem; background:var(--surface); transition:background .15s,border-color .15s; }
 .platform-button:hover { background:var(--raised); border-color:var(--border-strong); }
 .platform-button:disabled { opacity:.45; cursor:wait; }

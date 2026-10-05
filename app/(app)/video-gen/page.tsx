@@ -1,0 +1,4 @@
+import {VideoStudio} from '@/components/videos/video-studio';
+import {videoAvailable} from '@/lib/videos/provider';
+import {getSession} from '@/lib/auth/session';
+export default async function VideoPage(){const {supabase,user}=await getSession();const [projects,members,videos]=await Promise.all([supabase.from('projects').select('id,name,owner_id').is('deleted_at',null).order('updated_at',{ascending:false}).limit(100),supabase.from('project_members').select('project_id').eq('user_id',user!.id).eq('role','editor'),supabase.from('video_jobs').select('*').eq('owner_id',user!.id).is('hidden_at',null).order('created_at',{ascending:false}).limit(30)]);const editorIds=new Set(members.data?.map(m=>m.project_id));return <VideoStudio initial={videos.data??[]} available={videoAvailable()} projects={(projects.data??[]).filter(p=>p.owner_id===user?.id||editorIds.has(p.id)).map(p=>({id:p.id,name:p.name}))}/>;}

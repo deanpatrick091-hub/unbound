@@ -15,7 +15,7 @@ interface MemberCardProps {
 }
 
 export const MemberCard = memo(function MemberCard({ role, member, style }: MemberCardProps) {
-  const { label, tagline } = COUNCIL_MEMBERS[role];
+  const { label } = COUNCIL_MEMBERS[role];
   const isLive = member.status === "streaming";
 
   return (
@@ -24,7 +24,7 @@ export const MemberCard = memo(function MemberCard({ role, member, style }: Memb
       aria-busy={isLive}
       style={style}
       className={cn(
-        "flex min-h-[180px] flex-col rounded-xl border bg-surface/60 p-4 transition-colors animate-rise-in sm:p-5",
+        "min-w-0 border-b py-5 transition-colors",
         isLive && "border-border-strong",
         member.status === "error" && "border-destructive/30",
       )}
@@ -32,7 +32,7 @@ export const MemberCard = memo(function MemberCard({ role, member, style }: Memb
       <summary className="flex items-baseline justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold tracking-wide">{label}</h3>
-          <p className="mt-0.5 text-[11px] text-subtle">{tagline}</p><p className="mt-1 text-xs text-muted-foreground">{member.model}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{member.model}</p>
         </div>
         <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.14em] text-subtle">
           {member.status === "pending" ? (

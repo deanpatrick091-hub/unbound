@@ -50,7 +50,7 @@ export function BuilderScreen({ model,project }: BuilderScreenProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2"><Link href="/build" className="platform-button">Projects</Link><h1 className="mr-auto truncate text-sm">{project.name}</h1><span className="text-xs text-subtle">{builder.isBusy?'Building…':builder.status==='error'?'Previous version preserved':`Saved · v${builder.version}`}</span><PinButton kind="project" id={project.id}/><PinButton kind="website" id={project.id}/><PeoplePanel project={project}/><Link href={'/build/'+project.id+'/history'} className="platform-button">History</Link></div>
+      <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2"><Link href="/build" className="platform-button">Projects</Link><h1 className="mr-auto truncate text-sm">{project.name}</h1><span className="text-xs text-subtle">{builder.isBusy?'Building…':builder.status==='error'?'Previous version preserved':`Saved · v${builder.version}`}</span><PinButton kind="project" id={project.id}/><PinButton kind="website" id={project.id}/><PeoplePanel project={project}/><Link href={'/build/'+project.id+'/assets'} className="platform-button">Assets</Link><Link href={'/build/'+project.id+'/history'} className="platform-button">History</Link></div>
       {/* Mobile: tab switcher */}
       <div role="tablist" aria-label="Workspace" className="flex h-11 shrink-0 items-stretch border-b md:hidden">
         <MobileTabButton active={mobileTab === "chat"} onClick={() => setMobileTab("chat")} icon={MessageSquare}>
