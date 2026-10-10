@@ -1,3 +1,4 @@
+import {routeImage} from '@/lib/images/routing';
 import {getSession} from '@/lib/auth/session';
 import {errorResponse,limitResponse} from '@/lib/api/responses';
 import {getProviderConfig} from '@/lib/ai/providers';
@@ -24,23 +25,24 @@ export async function POST(request:Request){
  const limit=await consumeRequest(supabase,'build');if(!limit.allowed)return limitResponse(limit);if(limit.degraded)return errorResponse(503,'upstream_error','The usage check is temporarily unavailable.');
  const choices=imageProviders().sort((a,b)=>Number(b.id===provider)-Number(a.id===provider));
  const signal=AbortSignal.any([request.signal,AbortSignal.timeout(100000)]);
- let exhausted=false;
- for(const choice of choices){
- const provider=choice.id; const config=getProviderConfig(provider==='huggingface'?'huggingface':'cloudflare');
- if(!config||config.kind!=='openai-compatible')continue;
- try{
+ let result;
+ try { result=await routeImage(choices.map(choice=>choice.id),provider,signal,async provider=>{
+ const config=getProviderConfig(provider==='huggingface'?'huggingface':'cloudflare');
+ if(!config||config.kind!=='openai-compatible')return {status:503};
   const hf=provider==='huggingface';
   const url=hf?'https://router.huggingface.co/nscale/v1/images/generations':config.baseUrl.replace(/\/v1$/,'/run/@cf/black-forest-labs/flux-1-schnell');
-  const response=await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+config.apiKey,'Content-Type':'application/json'},body:JSON.stringify(hf?{model:'black-forest-labs/FLUX.1-schnell',prompt:prompt.trim(),response_format:'b64_json',size:'512x512',n:1}:{prompt:prompt.trim(),steps:4}),signal:AbortSignal.any([signal,AbortSignal.timeout(choices.length>1?45000:95000)])});
-  if([402,429].includes(response.status)){exhausted=true;continue;}
-  if(!response.ok){console.warn('[images] provider failure',{provider,status:response.status});continue;}
+  const response=await fetch(url,{method:'POST',redirect:'error',headers:{Authorization:'Bearer '+config.apiKey,'Content-Type':'application/json'},body:JSON.stringify(hf?{model:'black-forest-labs/FLUX.1-schnell',prompt:prompt.trim(),response_format:'b64_json',size:'512x512',n:1}:{prompt:prompt.trim(),steps:4}),signal:AbortSignal.any([signal,AbortSignal.timeout(choices.length>1?45000:95000)])});
+  if(!response.ok){console.warn('[images] provider failure',{provider,status:response.status});await response.body?.cancel();return {status:response.status,retryAfter:response.headers.get('retry-after')};}
   const data=JSON.parse(await boundedText(response,6000000));const b64=hf?data.data?.[0]?.b64_json:data.result?.image;
   if(typeof b64!=='string'||b64.length>5500000||!/^[A-Za-z0-9+/]+={0,2}$/.test(b64))throw Error('Invalid image');
   const mime=imageMime(b64);if(!mime)throw Error('Unsupported image format');
-  const src=`data:${mime};base64,${b64}`;
-  const saved=await supabase.from('project_assets').insert({owner_id:user.id,project_id:projectId,prompt:prompt.trim(),provider,mime_type:mime,data_url:src}).select('id,created_at').single();
-  return Response.json({src,provider,id:saved.data?.id,mime,warning:saved.error?'Your image was generated but could not be saved. Download it now to keep a copy.':undefined},{headers:{'Cache-Control':'private, no-store'}});
- }catch{if(signal.aborted)break;}
+  return {status:200,value:{src:`data:${mime};base64,${b64}`,mime}};
+ }); } catch { return errorResponse(504,'network_error','Image generation was interrupted. Your saved images are still available.'); }
+ if('error' in result){
+  const headers={'Retry-After':String(result.retryAfter),'Cache-Control':'private, no-store'};
+  return result.error==='quota'?errorResponse(429,'rate_limited','All connected free image allowances are busy or exhausted. Please retry after their reset.',headers):errorResponse(503,'network_error','No connected image provider is available right now. Please try again shortly.',headers);
  }
- return exhausted?errorResponse(429,'rate_limited','All connected free image allowances are busy or exhausted. Please retry after their reset.'):errorResponse(502,'network_error','The connected image providers could not finish this image. Please retry.');
+ const {src,mime}=result.value;
+ const saved=await supabase.from('project_assets').insert({owner_id:user.id,project_id:projectId,prompt:prompt.trim(),provider:result.provider,mime_type:mime,data_url:src}).select('id,created_at').single();
+ return Response.json({src,provider:result.provider,id:saved.data?.id,mime,warning:saved.error?'Your image was generated but could not be saved. Download it now to keep a copy.':undefined},{headers:{'Cache-Control':'private, no-store'}});
 }
