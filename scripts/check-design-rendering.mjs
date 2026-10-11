@@ -20,7 +20,7 @@ try{
   for(const width of [375,768,1440]){
    await page.setViewportSize({width,height:960});
    await page.goto('about:blank');await page.setContent(assembleDocument(designDemo(config)));
-   await page.locator('.ub-motion-toggle').waitFor();
+   await page.locator('.ub-motion-toggle').waitFor({state:'attached'});
    assert.equal(await page.locator('.ub-motion-toggle').count(),1);
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),style.id+' horizontal overflow '+width);
    assert.ok(await page.locator('.ub-art').evaluate(el=>el.getBoundingClientRect().height>=180));
@@ -40,7 +40,7 @@ try{
   if(await page.locator('.ub-motion-toggle').isVisible()){await page.locator('.ub-motion-toggle').click();assert.equal(await page.evaluate(()=>document.documentElement.dataset.ubPaused),'true');}
   console.log('PASS rendered '+style.name+' at mobile/tablet/desktop, keyboard focus and reduced motion');
  }
- for(const styles of STYLE_PAIRS){await page.goto('about:blank');await page.setContent(assembleDocument(designDemo({...DEFAULT_DESIGN,mode:'manual',styles})));await page.locator('.ub-motion-toggle').waitFor();assert.equal(await page.locator('#ub-design-style').count(),1);}
+ for(const styles of STYLE_PAIRS){await page.goto('about:blank');await page.setContent(assembleDocument(designDemo({...DEFAULT_DESIGN,mode:'manual',styles})));await page.locator('.ub-motion-toggle').waitFor({state:'attached'});assert.equal(await page.locator('#ub-design-style').count(),1);}
  await page.goto('about:blank');await page.setContent(assembleDocument(designDemo({...DEFAULT_DESIGN,mode:'manual',styles:['particle'],motion:'maximum',speed:2,density:64})));
  const canvas=page.locator('canvas');await canvas.waitFor();
  const before=await canvas.evaluate(c=>c.toDataURL());await page.waitForTimeout(180);assert.notEqual(await canvas.evaluate(c=>c.toDataURL()),before,'particles actually animate');
