@@ -142,3 +142,22 @@ test('an unconfigured selected provider automatically uses a configured free mod
  try{const events=[];for await(const e of streamWithFallback({...options,model:'cerebras:unconfigured'}))events.push(e);assert.deepEqual(events.map(e=>e.type),['fallback','text','done']);assert.equal(events[0].to,'kilo:working/model:free');}
  finally{globalThis.fetch=original;invalidateModelCache();}
 });
+
+test('a model output limit skips the same underlying model on other providers without removing it',async()=>{
+ const {streamWithFallback}=await import('../lib/ai/generate.ts');
+ const {invalidateModelCache,getAvailableModels}=await import('../lib/ai/discovery.ts');
+ const {markHealthy}=await import('../lib/ai/health.ts');
+ const original=globalThis.fetch,old=process.env.OPENROUTER_API_KEY;
+ process.env.OPENROUTER_API_KEY='test';invalidateModelCache();
+ const shared='fixture/shared-coder:free',other='fixture/working-coder:free',calls=[];
+ globalThis.fetch=async(url,init)=>{
+  if(!String(url).endsWith('/chat/completions'))return Response.json({data:(String(url).includes('kilo.ai')?[shared,other]:String(url).includes('openrouter.ai')?[shared]:[]).map(id=>({id,pricing:{prompt:'0',completion:'0'},context_length:128000}))});
+  const model=JSON.parse(init.body).model;calls.push(model);
+  return new Response(model===shared?'data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\n':'data: {"choices":[{"delta":{"content":"Complete"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+ };
+ try{
+  const events=[];for await(const event of streamWithFallback({...options,model:'kilo:'+shared,longRunning:true}))events.push(event);
+  assert.deepEqual(calls,[shared,other]);assert.equal(events[0].to,'kilo:'+other);assert.equal(events.at(-1).type,'done');
+  assert.ok((await getAvailableModels()).some(m=>m.id==='openrouter:'+shared),'manual model remains in the registry');
+ }finally{globalThis.fetch=original;if(old===undefined)delete process.env.OPENROUTER_API_KEY;else process.env.OPENROUTER_API_KEY=old;markHealthy('kilo:'+shared);invalidateModelCache();}
+});

@@ -166,7 +166,7 @@ export async function* streamOpenAICompatible(
       const text = typeof content === "string" ? content : Array.isArray(content) ? content.filter(part => part.type === "text" && typeof part.text === "string").map(part => part.text).join("") : "";
       if (text) yield { type: "text", text };
       if (choice?.finish_reason === "length") {
-        yield { type: "error", code: "upstream_error", message: "The model reached its response limit. Ask for a shorter answer or continue from the last section." };
+        yield { type: "error", code: "upstream_error", retryScope: "model", message: "The model reached its response limit. Ask for a shorter answer or continue from the last section." };
         return;
       }
 

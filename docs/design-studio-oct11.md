@@ -18,13 +18,13 @@ Incremental upgrade of the existing Unbound Build workspace. This does not compl
 
 ## Validation
 
-- Lint, TypeScript (through production build), production build and 43 automated tests passed.
+- Lint, TypeScript (through production build), production build and 44 automated tests passed.
 - Actual Chromium rendering passed for all 15 samples at 375, 768 and 1440px: no horizontal overflow, keyboard focus, reduced motion and pause controls.
 - All six compatible combinations rendered. Canvas output changed while running and remained unchanged after pause. No page script errors or network requests from the samples.
 - Desktop/mobile screenshots were inspected for representative particle, clay, wireframe and holographic samples.
 - Local production HTTP against the real Supabase backend passed: save/reopen design, logout/login persistence, exported design code, stale revision rejection, invalid combination rejection, cross-origin rejection, outsider isolation, viewer rejection and editor save. Existing auth/project/pin/media workflow tests also passed.
 - Earlier live Automatic Build fixture was recovered from Supabase: revision 1, three saved files, actual final model `kilo:poolside/laguna-s-2.1:free`. This proves the earlier Build completed; it is not a live-generation test of this new design code.
-- Actual workspace Chromium test passed: choose Clay + Mesh, adjust controls, render a 375px sample, save, reload, retain settings, open the mobile dialog, dismiss with Escape, and observe no page script errors. Desktop/mobile workspace screenshots were inspected. Production-generation verification of this new code is recorded below when run; no unobserved provider success is implied.
+- Actual workspace Chromium test passed: choose Clay + Mesh, adjust controls, render a 375px sample, save, reload, retain settings, open the mobile dialog, dismiss with Escape, and observe no page script errors. Desktop/mobile workspace screenshots were inspected. Production-generation verification is recorded below.
 
 ## How to use
 
@@ -61,3 +61,18 @@ Gmail and other account OAuth plugins, secure per-user token vault, consequentia
 - `tests/design-engine.test.mjs`
 - `scripts/check-design-rendering.mjs`, `scripts/check-design-workspace.mjs`, `scripts/check-platform-http.mjs`
 - `docs/design-studio-oct11.md`, `docs/platform-foundations-oct11.md`
+
+
+## Production verification and routing correction
+
+The design release reached READY on the existing production alias `unbound-lilac.vercel.app` (application commit `3bffd1a`, deployment `dpl_HRZwXswSM4jeSzzCXbR7XtzbsDud`). A real live request completed at 18:28 UTC on 11 October, using `kilo:poolside/laguna-s-2.1:free`: three files, saved revision 1, persisted Clay + Mesh configuration, rendered preview response and ZIP containing the real design runtime. No new API key was needed. No service-role key was retrieved or used by these tests.
+
+The resulting website was then rendered in Chromium using Unbound's actual iframe sandbox/CSP at 375, 768 and 1440px. It passed horizontal-overflow, internal navigation, keyboard-focus and reduced-motion checks with no page script errors. Its desktop/mobile screenshots were inspected. This checks a real generated result, not only the style gallery.
+
+The live request exposed two consecutive output-limit failures from the same underlying model through different gateways. The follow-up correction tags model output-cap failures and skips that same model across gateways for the remainder of the request. It selects a different compatible free model without removing any model from the registry or changing manual availability. Account rate-limit/quota fallback still prefers another provider. Existing protection against retrying after partial text remains. An additional regression test covers the exact failure sequence.
+
+Production browser navigation from the test runner was blocked by its proxy certificate trust (`ERR_CERT_AUTHORITY_INVALID`). HTTPS API checks succeeded; the complete UI save/reopen/mobile workflow was browser-tested against the local production build and real Supabase. Certificate verification was not disabled and Vercel TLS settings were not changed. Do not describe the production browser UI workflow as passed.
+
+A production error/fatal log scan after generation returned no matching entries in the inspected 15-minute window. This is a point-in-time check, not continuous monitoring.
+
+Additional files: `lib/ai/types.ts`, `lib/ai/openai-compatible.ts`, `lib/ai/generate.ts`, `tests/free-policy.test.mjs`, `scripts/check-design-live.mjs`, `scripts/check-generated-preview.mjs`. The live test script requires an explicit HTTPS `TEST_ORIGIN`; optional `LIVE_RESULT_DIR` saves only the generated test site and non-secret result metadata. The generated-preview script consumes that directory. Fixture credentials remain in memory.

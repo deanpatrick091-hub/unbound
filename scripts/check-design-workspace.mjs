@@ -22,7 +22,9 @@ try{
  const {data:auth,error:authError}=await db.auth.getUser();assert.equal(authError,null);
  const created=await db.from('projects').insert({owner_id:auth.user.id,updated_by:auth.user.id,name:'Design Studio browser verification',model:'openrouter:openrouter/free'}).select('id').single();assert.equal(created.error,null);projectId=created.data.id;
  const saved=await db.rpc('save_project',{p_id:projectId,p_revision:0,p_files:{'index.html':'<!doctype html><html lang="en"><head><title>Fixture</title></head><body><main><h1>Preserve this site</h1><div class="ub-art" aria-hidden="true"></div></main></body></html>'},p_conversation:[],p_model:'openrouter:openrouter/free',p_settings:{},p_preview:{}});assert.equal(saved.error,null);
- browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_EXECUTABLE?{executablePath:process.env.CHROMIUM_EXECUTABLE,args:['--single-process','--no-zygote','--in-process-gpu','--use-gl=angle','--use-angle=swiftshader']}:{})});
+ const proxyUrl=origin.startsWith('https:')&&(process.env.HTTPS_PROXY||process.env.https_proxy);
+ const proxy=proxyUrl?new URL(proxyUrl):null;
+ browser=await chromium.launch({headless:true,...(proxy?{proxy:{server:proxy.origin,username:decodeURIComponent(proxy.username),password:decodeURIComponent(proxy.password)}}:{}),...(process.env.CHROMIUM_EXECUTABLE?{executablePath:process.env.CHROMIUM_EXECUTABLE,args:['--single-process','--no-zygote','--in-process-gpu','--use-gl=angle','--use-angle=swiftshader']}:{})});
  const context=await browser.newContext({viewport:{width:1440,height:1000}});
  await context.addCookies([...jar].map(([name,value])=>({name,value,url:origin,httpOnly:true,sameSite:'Lax'})));
  const page=await context.newPage();page.setDefaultTimeout(60000);

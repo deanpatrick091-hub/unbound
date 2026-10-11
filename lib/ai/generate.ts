@@ -26,6 +26,8 @@ export async function* streamGeneration(options: GenerationOptions): AsyncGenera
 /** Announces every model/provider switch, never retries after output, never uses paid models. */
 export async function* streamWithFallback(options: GenerationOptions): AsyncGenerator<GenerationEvent> {
   const tried = new Set<string>();
+  const exhaustedModels = new Set<string>();
+  const modelIdentity=(id:string)=>parseModelId(id).model.toLowerCase().replace(/:free$/, "");
   let current = qualifyModelId(options.model);
   const deadline = new AbortController();
   const deadlineTimer = setTimeout(() => deadline.abort(), options.longRunning ? 285_000 : 110_000);
@@ -58,14 +60,16 @@ export async function* streamWithFallback(options: GenerationOptions): AsyncGene
       if (error.code === "aborted") error = { type: "error", code: "upstream_error", message: "The model did not start replying in time." };
       if (started || ["content_blocked"].includes(error.code)) { yield error; return; }
       const provider = parseModelId(current).provider;
+      if(error.retryScope === "model")exhaustedModels.add(modelIdentity(current));
       if (error.code === "quota_exhausted") {
         markProviderQuotaExhausted(provider, "Free allowance reached; wait for the provider reset");
       }
       if (error.code === "rate_limited") markRateLimited(current);
       else if (error.code !== "model_restricted") markSoftFailure(current, "A recent request failed");
-      const candidates = rankFallbacks((await getAvailableModels()).filter(m => !tried.has(m.id) && isFallbackCandidate(m.id)), options.longRunning ? 'build' : 'chat', options.systemInstruction.length+options.turns.reduce((n,t)=>n+t.content.length,0), options.maxTokens??4096);
+      const candidates = rankFallbacks((await getAvailableModels()).filter(m => !tried.has(m.id) && !exhaustedModels.has(modelIdentity(m.id)) && isFallbackCandidate(m.id)), options.longRunning ? 'build' : 'chat', options.systemInstruction.length+options.turns.reduce((n,t)=>n+t.content.length,0), options.maxTokens??4096);
       // A different provider avoids a shared account limit affecting every model.
-      const next = candidates.find(m => m.provider !== provider) ?? candidates[0];
+      // A model output limit needs a different model, not the same model through another gateway.
+      const next = error.retryScope === "model" ? candidates[0] : candidates.find(m => m.provider !== provider) ?? candidates[0];
       if (!next || attempt === 4) { yield error; return; }
       yield { type: "fallback", from: current, to: next.id, reason: error.message };
       current = next.id;
