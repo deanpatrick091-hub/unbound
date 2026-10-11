@@ -1,5 +1,7 @@
 # Platform foundations — 11 October 2026
 
+Later design-engine progress is documented in [Design Studio](design-studio-oct11.md). The scope below describes this earlier checkpoint.
+
 This is an incremental release, not completion of the full plugin, deployment, or 15-style design-engine request.
 
 ## Architecture and delivered changes

@@ -1,3 +1,6 @@
+import { isSameOrigin } from "@/lib/auth/same-origin";
+import { parseDesign, resolveDesign } from "@/lib/design/registry";
+import { applyDesign, stripDesign, designInstructions } from "@/lib/design/render";
 import {inspectSite} from '@/lib/build/quality';
 import {selectBuildModel} from '@/lib/build/selection';
 import {getAvailableModels} from '@/lib/ai/discovery';
@@ -75,6 +78,7 @@ function parseBuildRequest(body: unknown): Parsed {
  * executed here — the server only forwards text.
  */
 export async function POST(request: NextRequest): Promise<Response> {
+  if(!isSameOrigin(request))return errorResponse(403,"invalid_request","Reload this page.");
   const { supabase, user } = await getSession();
   if (!user) return errorResponse(401, "unauthorized", "Sign in to continue.");
 
@@ -92,13 +96,17 @@ export async function POST(request: NextRequest): Promise<Response> {
   if(!project)return errorResponse(404,'invalid_request','Project unavailable.');
   if(project.role==='viewer')return errorResponse(403,'invalid_request','This project is read-only.');
   if(project.revision!==body.revision)return errorResponse(409,'invalid_request','This project changed elsewhere. Reopen it before building.');
-  const files=project.files;
+  const files=stripDesign(project.files);
   const history=project.conversation.slice(-BUILD_LIMITS.contextTurns).map(m=>({role:m.role,content:m.content}));
 
   const settings=isRecord(project.settings)?project.settings:{};
+  const requestedDesign=body.design===undefined?parseDesign(settings.design):parseDesign(body.design);
+  if(body.design!==undefined&&!requestedDesign)return errorResponse(400,'invalid_request','Choose valid design settings.');
+  const design=requestedDesign?resolveDesign(requestedDesign,instruction):null;
+  const systemInstruction=BUILD_SYSTEM_INSTRUCTION+(design?designInstructions(design):'');
   const mode=body.modelMode??settings.modelMode??'manual';
   if(mode!=='automatic'&&mode!=='manual')return errorResponse(400,'invalid_request','Choose automatic or manual model selection.');
-  const auto=mode==='automatic'?selectBuildModel(await getAvailableModels(),instruction,instruction.length+JSON.stringify(files).length+JSON.stringify(history).length+BUILD_SYSTEM_INSTRUCTION.length):null;
+  const auto=mode==='automatic'?selectBuildModel(await getAvailableModels(),instruction,instruction.length+JSON.stringify(files).length+JSON.stringify(history).length+systemInstruction.length):null;
   if(auto&&!auto.model)return errorResponse(503,'not_configured','No connected free model currently has the capacity for this build.');
   const model=auto?.model??resolveModel(parsed.data.model,await getDefaultModelFor(supabase,user.id));
   const limit = await consumeRequest(supabase, "build");
@@ -138,7 +146,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       };
 
       const run = async () => {
-        send({ type: "meta", model });
+        send({ type: "meta", model, ...(design?{design}:{}) });
 
         const parser = new BuildOutputParser();
         let usedModel = model;
@@ -159,7 +167,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
         for await (const event of streamWithFallback({
           model,
-          systemInstruction: BUILD_SYSTEM_INSTRUCTION,
+          systemInstruction,
           turns,
           signal: AbortSignal.any([abort.signal, request.signal]),
           temperature: 0.5,
@@ -194,14 +202,16 @@ export async function POST(request: NextRequest): Promise<Response> {
         else if (!abort.signal.aborted) {
           if(parser.incomplete||completedFiles===0){send({type:'error',code:'upstream_error',message:'The model returned an unfinished or empty file update. Your previous version is safe. Please retry.'});close();return;}
           if(!outputFiles['index.html']?.trim()){send({type:'error',code:'upstream_error',message:'The model did not produce a complete webpage. Your previous version is safe.'});close();return;}
-          const issues=inspectSite(outputFiles);
+          const renderedFiles=design?applyDesign(outputFiles,design):outputFiles;
+          if(siteByteSize(renderedFiles)>BUILD_LIMITS.maxSiteBytes){send({type:'error',code:'upstream_error',message:'The generated site exceeded the size limit. Your previous version is safe.'});close();return;}
+          const issues=inspectSite(renderedFiles);
           send({type:'quality',issues});
           if(issues.some(i=>i.severity==='error')){send({type:'error',code:'upstream_error',message:'The generated website failed static checks: '+issues.filter(i=>i.severity==='error').map(i=>i.message).join(' ')+' Your previous version is safe.'});close();return;}
           const now=Date.now();
           const conversation=[...project.conversation,{id:crypto.randomUUID(),role:'user',content:instruction,createdAt:now},{id:crypto.randomUUID(),role:'assistant',content:summary.trim()||'Done — the preview is updated.',createdAt:now,status:'complete'}];
-          const saved=await supabase.rpc('save_project',{p_id:project.id,p_revision:project.revision,p_files:outputFiles as Json,p_conversation:conversation as Json,p_model:usedModel,p_settings:{...settings,modelMode:mode,quality:{checkedAt:new Date().toISOString(),kind:"static",issues}} as Json,p_preview:project.preview_state});
+          const saved=await supabase.rpc('save_project',{p_id:project.id,p_revision:project.revision,p_files:renderedFiles as Json,p_conversation:conversation as Json,p_model:usedModel,p_settings:{...settings,...(design?{design}:{}),modelMode:mode,quality:{checkedAt:new Date().toISOString(),kind:"static",issues}} as unknown as Json,p_preview:project.preview_state});
           if(saved.error)send({type:'error',code:'upstream_error',message:saved.error.code==='40001'?'Another editor saved a newer version. Reopen this project.':'The generated site could not be saved. Your previous version is safe; please retry.'});
-          else send({type:'done',usage,model:usedModel,revision:saved.data});
+          else {if(design)send({type:'file',name:'index.html',content:renderedFiles['index.html']!});send({type:'done',usage,model:usedModel,revision:saved.data});}
         }
         close();
       };

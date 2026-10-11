@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
+const DesignStudio=dynamic(()=>import("@/components/build/design-studio").then(m=>m.DesignStudio),{ssr:false});
 import {PinButton} from "@/components/projects/pin-button";
 import {PeoplePanel} from "@/components/projects/people-panel";
 import type {ProjectSnapshot} from "@/lib/projects/types";
@@ -38,6 +40,7 @@ export function BuilderScreen({ model,project }: BuilderScreenProps) {
   const { user } = useShell();
   const builder = useBuilder({ userId: user.id, model,project });
   const previewRef=useRef<HTMLElement>(null);
+  const [designOpen,setDesignOpen]=useState(false);
   const [viewport, setViewport] = useState<ViewportPreset>("desktop");
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [mobileTab, setMobileTab] = useState<MobileTab>("chat");
@@ -51,6 +54,7 @@ export function BuilderScreen({ model,project }: BuilderScreenProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2"><Link href="/build" className="platform-button">Projects</Link><h1 className="mr-auto truncate text-sm">{project.name}</h1><span className="text-xs text-subtle">{builder.isBusy?'Building…':builder.status==='error'?'Previous version preserved':`Saved · v${builder.version}`}</span><PinButton kind="project" id={project.id}/><PinButton kind="website" id={project.id}/><PeoplePanel project={project}/><Link href={'/build/'+project.id+'/deploy'} className="platform-button">Deploy & Domains</Link><Link href={'/build/'+project.id+'/assets'} className="platform-button">Assets</Link><Link href={'/build/'+project.id+'/history'} className="platform-button">History</Link></div>
+      {designOpen&&<DesignStudio saved={builder.design} busy={builder.designSaving} error={builder.designError} readOnly={project.role==='viewer'} onSave={builder.saveDesign} onClose={()=>setDesignOpen(false)}/>}
       {/* Mobile: tab switcher */}
       <div role="tablist" aria-label="Workspace" className="flex h-11 shrink-0 items-stretch border-b md:hidden">
         <MobileTabButton active={mobileTab === "chat"} onClick={() => setMobileTab("chat")} icon={MessageSquare}>
@@ -76,7 +80,7 @@ export function BuilderScreen({ model,project }: BuilderScreenProps) {
 
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 border-b px-4 py-2 text-xs"><label htmlFor="build-routing">Model routing</label><select id="build-routing" className="bg-transparent" disabled={builder.isBusy||project.role==='viewer'} value={builder.modelMode} onChange={e=>builder.setModelMode(e.target.value as 'automatic'|'manual')}><option value="automatic">Automatic · configured free models</option><option value="manual">Manual · chat-bar selection</option></select></div>
+          <div className="flex flex-wrap items-center gap-3 border-b px-4 py-2 text-xs"><button type="button" className="platform-button" disabled={builder.isBusy||builder.designSaving} onClick={()=>setDesignOpen(true)}>Design Studio</button><label htmlFor="build-routing">Model routing</label><select id="build-routing" className="bg-transparent" disabled={builder.isBusy||project.role==='viewer'} value={builder.modelMode} onChange={e=>builder.setModelMode(e.target.value as 'automatic'|'manual')}><option value="automatic">Automatic · configured free models</option><option value="manual">Manual · chat-bar selection</option></select></div>
           {builder.quality.length>0&&<details className="border-b px-4 py-2 text-xs"><summary>Static review · {builder.quality.length} findings</summary><ul className="mt-2 space-y-1">{builder.quality.map((q,i)=><li key={i}>{q.message}</li>)}</ul><p className="mt-2 text-muted-foreground">Code checks only, not a browser or accessibility certification.</p></details>}
           <MessageList messages={builder.messages} isBusy={builder.isBusy} emptyState={<EmptyState />} />
 
@@ -126,7 +130,7 @@ export function BuilderScreen({ model,project }: BuilderScreenProps) {
             </button>
           ) : null}
           {project.role==='viewer'?<p className="p-4 text-sm text-subtle">Viewer access · this project is read-only.</p>:<Composer
-            isBusy={builder.isBusy}
+            isBusy={builder.isBusy||builder.designSaving}
             model={builder.model}
             onModelChange={builder.setModel}
             onSend={sendAndPreview}

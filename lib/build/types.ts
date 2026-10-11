@@ -28,6 +28,7 @@ export interface BuildHistoryTurn {
 
 export interface BuildRequestBody {
   instruction: string;
+  design?: import("@/lib/design/registry").DesignConfig;
   modelMode?: "automatic" | "manual";
   projectId?: string;
   revision?: number;
@@ -39,7 +40,7 @@ export interface BuildRequestBody {
 
 /** NDJSON events streamed from POST /api/build. */
 export type BuildStreamEvent =
-  | { type: "meta"; model: string }
+  | { type: "meta"; model: string; design?: import("@/lib/design/registry").DesignConfig }
   | { type: "quality"; issues: import("./quality").QualityIssue[] }
   /** Conversational text from the model (streamed before/between file blocks). */
   | { type: "text"; text: string }

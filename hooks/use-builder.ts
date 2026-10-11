@@ -1,4 +1,5 @@
 "use client";
+import { DEFAULT_DESIGN, parseDesign, type DesignConfig } from "@/lib/design/registry";
 import type {QualityIssue} from "@/lib/build/quality";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -32,16 +33,18 @@ function createMessage(role: ChatMessage["role"], content: string): ChatMessage 
 
 /**
  * State for the website-builder workspace: the conversation, the current
- * site files, and streaming from /api/build. The site autosaves to
- * localStorage (per user) so a refresh doesn't lose work.
- *
- * Must run client-only (the screen is loaded with `ssr: false`): the initial
- * state is read from localStorage synchronously in the useState initialisers.
+ * site files, and streaming from /api/build. Supabase is authoritative and
+ * commits revisions before the preview changes. localStorage is a best-effort
+ * local snapshot only; reopening always reads the server project.
  */
 export function useBuilder(options: { userId: string; model: string; project: ProjectSnapshot }) {
   const router = useRouter();
   const savedSettings=options.project.settings&&typeof options.project.settings==='object'&&!Array.isArray(options.project.settings)?options.project.settings:{};
   const [modelMode,setModelMode]=useState<'automatic'|'manual'>(()=>savedSettings.modelMode==='automatic'?'automatic':'manual');
+  const [design,setDesign]=useState<DesignConfig|null>(()=>parseDesign(savedSettings.design)??(options.project.files['index.html']?null:{...DEFAULT_DESIGN}));
+  const [designSaving,setDesignSaving]=useState(false);
+  const [designError,setDesignError]=useState<string|null>(null);
+  const designBusyRef=useRef(false);
   const [quality,setQuality]=useState<QualityIssue[]>([]);
   const storageKey = `${STORAGE_PREFIX}${options.userId}:${options.project.id}`;
   const [initial] = useState(() => ({files:options.project.files,messages:options.project.conversation,model:options.project.model,version:options.project.revision}));
@@ -98,9 +101,8 @@ export function useBuilder(options: { userId: string; model: string; project: Pr
   const send = useCallback(
     async (instruction: string) => {
       const trimmed = instruction.trim();
-      if (!trimmed || isBusy) return;
+      if (!trimmed || isBusy || abortRef.current || designBusyRef.current) return;
 
-      abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
 
@@ -118,6 +120,7 @@ export function useBuilder(options: { userId: string; model: string; project: Pr
 
       let text = "";
       let receivedFile = false;
+      let resolvedDesign:DesignConfig|undefined;
       const stagedFiles:SiteFiles = {...filesRef.current};
       const fail = (nextError: BuilderError) => {
         commitMessages((prev) =>
@@ -130,7 +133,7 @@ export function useBuilder(options: { userId: string; model: string; project: Pr
         setWriting(null);
       };
 
-      const body: BuildRequestBody = { modelMode,instruction: trimmed, files: filesRef.current, model: modelRef.current, history, projectId:options.project.id, revision:revisionRef.current };
+      const body: BuildRequestBody = { ...(design?{design}:{}),modelMode,instruction: trimmed, files: filesRef.current, model: modelRef.current, history, projectId:options.project.id, revision:revisionRef.current };
 
       try {
         const response = await fetch("/api/build", {
@@ -154,6 +157,7 @@ export function useBuilder(options: { userId: string; model: string; project: Pr
           if (controller.signal.aborted) return;
           switch (event.type) {
             case "meta":
+              resolvedDesign=event.design;
               setModelState(event.model);
               modelRef.current=event.model;
               break;
@@ -195,6 +199,7 @@ export function useBuilder(options: { userId: string; model: string; project: Pr
                 return;
               }
               if(event.revision!==undefined)revisionRef.current=event.revision;
+              if(resolvedDesign)setDesign(resolvedDesign);
               commitFiles(()=>stagedFiles);
               commitMessages((prev) =>
                 prev.map((m) =>
@@ -225,8 +230,22 @@ export function useBuilder(options: { userId: string; model: string; project: Pr
         if (abortRef.current === controller) abortRef.current = null;
       }
     },
-    [commitFiles, commitMessages, isBusy, router, options.project.id,modelMode],
+    [commitFiles, commitMessages, isBusy, router, options.project.id,modelMode,design],
   );
+
+  const saveDesign=useCallback(async(next:DesignConfig)=>{
+    if(abortRef.current||designBusyRef.current||options.project.role==='viewer')return false;
+    designBusyRef.current=true;setDesignSaving(true);setDesignError(null);
+    try{
+      const response=await fetch('/api/projects/'+options.project.id+'/design',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:revisionRef.current,design:next})});
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.error||'The design could not be saved.');
+      revisionRef.current=data.revision;setVersion(data.revision);
+      filesRef.current=data.files;setFiles(data.files);setDesign(data.design);
+      return true;
+    }catch(error){setDesignError(error instanceof Error?error.message:'The design could not be saved.');return false;}
+    finally{designBusyRef.current=false;setDesignSaving(false);}
+  },[options.project.id,options.project.role]);
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
 
@@ -254,6 +273,7 @@ export function useBuilder(options: { userId: string; model: string; project: Pr
   }, [storageKey]);
 
   return {
+    design,saveDesign,designSaving,designError,
     modelMode,setModelMode,quality,
     messages,
     files,
