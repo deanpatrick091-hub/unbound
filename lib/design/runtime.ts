@@ -4,12 +4,13 @@ const start=()=>{
  const root=document.documentElement;
  const config=JSON.parse(document.getElementById('ub-design-config').textContent);
  const styles=config.styles;
+ const animated=styles.some(id=>['particle','liquid','holographic','wireframe','kinetic','isometric','clay','mesh','split-flap'].includes(id));
  const media=matchMedia('(prefers-reduced-motion: reduce)');
  let manuallyPaused=config.reducedMotion,frame=0,last=0,t=0,watch=0;
  const art=document.querySelector('.ub-art');
  let canvas,ctx,points=[];
  const motion=document.createElement('button');
- motion.type='button';motion.className='ub-motion-toggle';motion.setAttribute('aria-label','Pause decorative animation');
+ motion.hidden=!animated;motion.type='button';motion.className='ub-motion-toggle';motion.setAttribute('aria-label','Pause decorative animation');
  document.body.append(motion);
  const cube=()=>{const el=document.createElement('div');el.className='ub-cube';for(let i=0;i<6;i++)el.append(document.createElement('i'));return el;};
  if(art){
@@ -39,7 +40,7 @@ const start=()=>{
  function sync(){
   root.dataset.ubPaused=String(paused());motion.textContent=paused()?'Motion paused':'Pause motion';motion.setAttribute('aria-pressed',String(paused()));motion.disabled=media.matches||config.reducedMotion;
   motion.setAttribute('aria-label',media.matches||config.reducedMotion?'Reduced motion enabled':paused()?'Resume decorative animation':'Pause decorative animation');
-  clearInterval(watch);if(!document.hidden)watch=setInterval(()=>{if(root.dataset.ubPaused!==String(paused()))sync();},1000);
+  clearInterval(watch);if(!document.hidden&&animated)watch=setInterval(()=>{if(root.dataset.ubPaused!==String(paused()))sync();},1000);
   cancelAnimationFrame(frame);frame=0;if(!paused()&&ctx){last=performance.now();frame=requestAnimationFrame(tick);}else draw(0);
  }
  const onClick=()=>{manuallyPaused=!manuallyPaused;sync();};

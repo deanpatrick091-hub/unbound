@@ -33,12 +33,11 @@ try{
    if(width===375||width===1440)await page.screenshot({path:output+'/'+style.id+'-'+width+'.png',fullPage:true});
   }
   await page.emulateMedia({reducedMotion:'reduce'});
-  await page.waitForFunction(()=>document.documentElement.dataset.ubPaused==='true');
-  assert.equal(await page.locator('.ub-motion-toggle').isDisabled(),true);
+  if(await page.locator('.ub-motion-toggle').isVisible())await page.waitForFunction(()=>document.documentElement.dataset.ubPaused==='true');
+  if(await page.locator('.ub-motion-toggle').isVisible())assert.equal(await page.locator('.ub-motion-toggle').isDisabled(),true);
   assert.equal(await page.locator('.ub-art').evaluate(el=>getComputedStyle(el,'::before').animationName),'none');
   await page.emulateMedia({reducedMotion:'no-preference'});
-  await page.locator('.ub-motion-toggle').click();
-  assert.equal(await page.evaluate(()=>document.documentElement.dataset.ubPaused),'true');
+  if(await page.locator('.ub-motion-toggle').isVisible()){await page.locator('.ub-motion-toggle').click();assert.equal(await page.evaluate(()=>document.documentElement.dataset.ubPaused),'true');}
   console.log('PASS rendered '+style.name+' at mobile/tablet/desktop, keyboard focus and reduced motion');
  }
  for(const styles of STYLE_PAIRS){await page.goto('about:blank');await page.setContent(assembleDocument(designDemo({...DEFAULT_DESIGN,mode:'manual',styles})));await page.locator('.ub-motion-toggle').waitFor();assert.equal(await page.locator('#ub-design-style').count(),1);}

@@ -48,5 +48,5 @@ function DesignSample({document:html,width}:{document:string;width:number}){
   const [available,setAvailable]=useState(600);
   useEffect(()=>{if(!box.current)return;const observer=new ResizeObserver(([entry])=>setAvailable(entry.contentRect.width));observer.observe(box.current);return()=>observer.disconnect();},[]);
   const scale=Math.min(1,available/width);
-  return <div ref={box} className="relative h-[320px] overflow-hidden rounded-xl border bg-raised"><iframe title="Rendered style sample" srcDoc={html} sandbox={PREVIEW_SANDBOX} referrerPolicy="no-referrer" className="absolute left-0 top-0 origin-top-left border-0" style={{width,height:Math.ceil(320/Math.max(.1,scale)),transform:`scale(${scale})`}}/></div>;
+  return <div ref={box} className="relative h-[320px] overflow-hidden rounded-xl border bg-raised"><iframe title="Rendered style sample" srcDoc={html} sandbox={PREVIEW_SANDBOX} referrerPolicy="no-referrer" className="absolute left-0 top-0 origin-top-left border-0" style={{width,left:(available-width*scale)/2,height:Math.ceil(320/Math.max(.1,scale)),transform:`scale(${scale})`}}/></div>;
 }

@@ -24,7 +24,7 @@ Incremental upgrade of the existing Unbound Build workspace. This does not compl
 - Desktop/mobile screenshots were inspected for representative particle, clay, wireframe and holographic samples.
 - Local production HTTP against the real Supabase backend passed: save/reopen design, logout/login persistence, exported design code, stale revision rejection, invalid combination rejection, cross-origin rejection, outsider isolation, viewer rejection and editor save. Existing auth/project/pin/media workflow tests also passed.
 - Earlier live Automatic Build fixture was recovered from Supabase: revision 1, three saved files, actual final model `kilo:poolside/laguna-s-2.1:free`. This proves the earlier Build completed; it is not a live-generation test of this new design code.
-- Full workspace browser and new production-generation verification are recorded below when run. No unobserved provider success is implied.
+- Actual workspace Chromium test passed: choose Clay + Mesh, adjust controls, render a 375px sample, save, reload, retain settings, open the mobile dialog, dismiss with Escape, and observe no page script errors. Desktop/mobile workspace screenshots were inspected. Production-generation verification of this new code is recorded below when run; no unobserved provider success is implied.
 
 ## How to use
 
