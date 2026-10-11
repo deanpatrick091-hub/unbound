@@ -50,7 +50,7 @@ export function BuilderScreen({ model,project }: BuilderScreenProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2"><Link href="/build" className="platform-button">Projects</Link><h1 className="mr-auto truncate text-sm">{project.name}</h1><span className="text-xs text-subtle">{builder.isBusy?'Building…':builder.status==='error'?'Previous version preserved':`Saved · v${builder.version}`}</span><PinButton kind="project" id={project.id}/><PinButton kind="website" id={project.id}/><PeoplePanel project={project}/><Link href={'/build/'+project.id+'/assets'} className="platform-button">Assets</Link><Link href={'/build/'+project.id+'/history'} className="platform-button">History</Link></div>
+      <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2"><Link href="/build" className="platform-button">Projects</Link><h1 className="mr-auto truncate text-sm">{project.name}</h1><span className="text-xs text-subtle">{builder.isBusy?'Building…':builder.status==='error'?'Previous version preserved':`Saved · v${builder.version}`}</span><PinButton kind="project" id={project.id}/><PinButton kind="website" id={project.id}/><PeoplePanel project={project}/><Link href={'/build/'+project.id+'/deploy'} className="platform-button">Deploy & Domains</Link><Link href={'/build/'+project.id+'/assets'} className="platform-button">Assets</Link><Link href={'/build/'+project.id+'/history'} className="platform-button">History</Link></div>
       {/* Mobile: tab switcher */}
       <div role="tablist" aria-label="Workspace" className="flex h-11 shrink-0 items-stretch border-b md:hidden">
         <MobileTabButton active={mobileTab === "chat"} onClick={() => setMobileTab("chat")} icon={MessageSquare}>
@@ -76,6 +76,8 @@ export function BuilderScreen({ model,project }: BuilderScreenProps) {
 
           </div>
 
+          <div className="flex flex-wrap items-center gap-3 border-b px-4 py-2 text-xs"><label htmlFor="build-routing">Model routing</label><select id="build-routing" className="bg-transparent" disabled={builder.isBusy||project.role==='viewer'} value={builder.modelMode} onChange={e=>builder.setModelMode(e.target.value as 'automatic'|'manual')}><option value="automatic">Automatic · configured free models</option><option value="manual">Manual · chat-bar selection</option></select></div>
+          {builder.quality.length>0&&<details className="border-b px-4 py-2 text-xs"><summary>Static review · {builder.quality.length} findings</summary><ul className="mt-2 space-y-1">{builder.quality.map((q,i)=><li key={i}>{q.message}</li>)}</ul><p className="mt-2 text-muted-foreground">Code checks only, not a browser or accessibility certification.</p></details>}
           <MessageList messages={builder.messages} isBusy={builder.isBusy} emptyState={<EmptyState />} />
 
           <p role="status" className="sr-only">

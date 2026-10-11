@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useMemo } from "react";
 import Link from "next/link";
@@ -50,6 +50,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         <NavTile href="/council" icon={Users} label="Council" active={area === "council"} onClick={onNavigate} />
         <NavTile href="/image-gen" icon={ImageIcon} label="Image Gen" active={area === "image"} onClick={onNavigate} />
         <NavTile href="/video-gen" icon={Video} label="Videos" active={pathname === "/video-gen"} onClick={onNavigate} />
+        <NavTile href="/plugins" icon={Search} label="Integrations" active={pathname === "/plugins"} onClick={onNavigate} />
         <NavTile href="/tools" icon={Search} label="Tools" active={pathname === "/tools"} onClick={onNavigate} />
         <NavTile href="/build" icon={Hammer} label="Build" active={area === "build"} onClick={onNavigate} />
       </div>

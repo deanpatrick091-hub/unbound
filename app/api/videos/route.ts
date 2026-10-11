@@ -1,3 +1,4 @@
+import {videoFailure,videoQuotaBlocked,VIDEO_QUOTA_MESSAGE} from '@/lib/videos/errors';
 import {after} from 'next/server';
 import {getSession} from '@/lib/auth/session';
 import {isSameOrigin} from '@/lib/auth/same-origin';
@@ -18,23 +19,28 @@ export async function POST(request:Request){
  if(!videoAvailable())return Response.json({error:'Video generation is unavailable.'},{status:503});
  let body;try{body=await request.json();}catch{return Response.json({error:'Enter a video prompt.'},{status:400});}
  if(typeof body?.prompt!=='string'||!body.prompt.trim()||body.prompt.length>4000||!['16:9','9:16'].includes(body.aspectRatio))return Response.json({error:'Enter a prompt up to 4,000 characters and choose an aspect ratio.'},{status:400});
- const limit=await consumeRequest(supabase,'build');if(!limit.allowed||limit.degraded)return Response.json({error:'Video allowance is busy. Please retry later.'},{status:429});
+ const previous=await supabase.from('video_jobs').select('error,created_at').eq('owner_id',user.id).eq('error',VIDEO_QUOTA_MESSAGE).order('created_at',{ascending:false}).limit(1).maybeSingle();
+ if(previous.error)return Response.json({error:'Video status could not be checked. Please retry later.'},{status:503});
+ if(videoQuotaBlocked(previous.data,process.env.VIDEO_QUOTA_RESET_AT))return Response.json({error:VIDEO_QUOTA_MESSAGE},{status:402});
+ const limit=await consumeRequest(supabase,'build');if(!limit.allowed)return Response.json({error:limit.message},{status:429,headers:limit.retryAfterSeconds?{'Retry-After':String(limit.retryAfterSeconds)}:{}});
+ if(limit.degraded)return Response.json({error:'The usage check is temporarily unavailable. Please retry later.'},{status:503});
  const active=await supabase.from('video_jobs').select('id').eq('owner_id',user.id).in('status',['queued','running']).limit(1);
  if(active.error)return Response.json({error:'Could not start a video.'},{status:503});
  if(active.data?.length)return Response.json({error:'A video is already being generated.'},{status:409});
  const {data:job,error}=await supabase.from('video_jobs').insert({owner_id:user.id,prompt:body.prompt.trim(),aspect_ratio:body.aspectRatio}).select('*').single();
+ if(error?.code==='23505')return Response.json({error:'A video is already being generated.'},{status:409});
  if(error||!job)return Response.json({error:'Could not save this generation.'},{status:503});
  after(async()=>{
   const started=await supabase.from('video_jobs').update({status:'running'}).eq('id',job.id).eq('status','queued').select('id').maybeSingle();if(!started.data)return;
   try{
    const result=await generateVideo(job.prompt,job.aspect_ratio,AbortSignal.timeout(270000));
    const state=await supabase.from('video_jobs').select('status').eq('id',job.id).single();if(state.data?.status!=='running')return;
-   const path=user.id+'/'+job.id+'.mp4';const upload=await supabase.storage.from('generated-videos').upload(path,result.bytes,{contentType:'video/mp4',upsert:false});if(upload.error)throw Error('Storage failed');
-   const saved=await supabase.from('video_jobs').update({status:'complete',storage_path:path,model:result.model}).eq('id',job.id).eq('status','running');if(saved.error)throw Error('Save failed');
+   const path=user.id+'/'+job.id+'.mp4';const upload=await supabase.storage.from('generated-videos').upload(path,result.bytes,{contentType:'video/mp4',upsert:false});if(upload.error)throw Object.assign(Error('Storage failed'),{videoCode:'storage'});
+   const saved=await supabase.from('video_jobs').update({status:'complete',storage_path:path,model:result.model}).eq('id',job.id).eq('status','running');if(saved.error)throw Object.assign(Error('Save failed'),{videoCode:'storage'});
   }catch(e){
-   const status=typeof e==='object'&&e&&'httpResponse' in e?(e.httpResponse as {status?:number})?.status:undefined;
-   console.warn('[videos] generation failed',{status:status??'generation-or-storage'});
-   await supabase.from('video_jobs').update({status:'failed',error:[402,429].includes(status??0)?'The free video allowance is exhausted or busy. Please retry after it resets.':'The video provider could not finish this clip. Please retry.'}).eq('id',job.id).eq('status','running');
+   const failure=videoFailure(e);
+   console.warn('[videos] generation failed',{code:failure.code,status:failure.status??null});
+   await supabase.from('video_jobs').update({status:'failed',error:failure.message}).eq('id',job.id).eq('status','running');
   }
  });
  return Response.json({job},{status:202,headers:{'Cache-Control':'no-store'}});

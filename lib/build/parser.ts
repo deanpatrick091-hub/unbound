@@ -14,6 +14,7 @@ const FENCE_FILES: Record<string, SiteFileName> = {
 /** Parse complete lines so tokens split across stream chunks cannot leak into
  * chat. Accept our file protocol and ordinary fenced HTML/CSS/JS answers. */
 export class BuildOutputParser {
+  incomplete = false;
   private buffer = "";
   private currentFile: SiteFileName | null = null;
   private fileLines: string[] = [];
@@ -35,7 +36,7 @@ export class BuildOutputParser {
     const pieces: ParsedPiece[] = [];
     if (this.buffer.length > 0) pieces.push(...this.consumeLine(this.buffer, false));
     this.buffer = "";
-    if (this.currentFile) pieces.push(this.closeFile());
+    if (this.currentFile) { this.incomplete = true; pieces.push(this.closeFile()); }
     return pieces;
   }
 

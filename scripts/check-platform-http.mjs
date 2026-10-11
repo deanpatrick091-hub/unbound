@@ -21,6 +21,11 @@ try{
  let created=await db.from('projects').insert({owner_id:userId,updated_by:userId,name:'Verification website',model:'test'}).select('id').single();assert.equal(created.error,null);const projectId=created.data.id;
  let saved=await db.rpc('save_project',{p_id:projectId,p_revision:0,p_files:{'index.html':'<html><body><h1>Verified preview</h1></body></html>'},p_conversation:[],p_model:'test',p_settings:{},p_preview:{}});assert.equal(saved.error,null);
  r=await req('/api/projects/'+projectId+'/thumbnail');assert.equal(r.status,200);assert.equal(r.headers.get('content-security-policy'),'sandbox allow-scripts');assert.match(await r.text(),/Verified preview/);
+ r=await req('/api/projects/'+projectId+'/export');assert.equal(r.status,200);assert.equal(r.headers.get('content-type'),'application/zip');const zip=Buffer.from(await r.arrayBuffer());assert.equal(zip.readUInt32LE(0),0x04034b50);assert.ok(zip.includes(Buffer.from('Verified preview')));
+ r=await req('/build/'+projectId+'/deploy');assert.equal(r.status,200);assert.match(await r.text(),/Deploy &amp; Domains/);
+ r=await req('/api/plugins/run',{plugin:'gmail',input:'send'});assert.equal(r.status,409);
+ r=await req('/api/plugins/run',{plugin:'vercel-domains',input:'example.com'},'https://wrong.invalid');assert.equal(r.status,403);
+ console.log('PASS source export, deployment guide, unconnected plugin rejection and cross-origin tool rejection');
  const pin=await db.from('pins').insert({user_id:userId,kind:'project',project_id:projectId}).select('id').single();assert.equal(pin.error,null);assert.equal((await db.from('pins').delete().eq('id',pin.data.id)).error,null);
  const asset=await db.from('project_assets').insert({owner_id:userId,project_id:projectId,prompt:'Automated verification fixture',provider:'test-fixture',mime_type:'image/png',data_url:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aP7kAAAAASUVORK5CYII='}).select('id').single();assert.equal(asset.error,null);
  r=await req('/api/images');assert.equal(r.status,200);assert.ok((await r.json()).images.some(x=>x.id===asset.data.id));
@@ -41,7 +46,7 @@ try{
  r=await req('/api/auth/username',{action:'logout'});assert.equal(r.status,200);
  r=await req('/');assert.equal(r.status,307);
  r=await req('/login');assert.equal(r.status,200);
- r=await req('/api/projects/'+projectId+'/thumbnail');assert.equal(r.status,404);r=await req('/api/images/'+asset.data.id);assert.equal(r.status,404);console.log('PASS outsider project and asset isolation');
+ r=await req('/api/projects/'+projectId+'/thumbnail');assert.equal(r.status,404);r=await req('/api/images/'+asset.data.id);assert.equal(r.status,404);r=await req('/api/projects/'+projectId+'/export');assert.equal(r.status,404);console.log('PASS outsider project, export and asset isolation');
  r=await req('/api/auth/username',{action:'signup',username,password});assert.equal(r.status,409);console.log('PASS logout and duplicate usernames');
  r=await req('/api/auth/username',{action:'login',username,password:'incorrect-password'});assert.equal(r.status,401);
  r=await req('/api/auth/username',{action:'login',username,password});assert.equal(r.status,200);assert.deepEqual(await r.json(),{ok:true});

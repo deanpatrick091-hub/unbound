@@ -28,6 +28,7 @@ export interface BuildHistoryTurn {
 
 export interface BuildRequestBody {
   instruction: string;
+  modelMode?: "automatic" | "manual";
   projectId?: string;
   revision?: number;
   /** The site as it currently exists in the workspace (empty for a fresh build). */
@@ -39,6 +40,7 @@ export interface BuildRequestBody {
 /** NDJSON events streamed from POST /api/build. */
 export type BuildStreamEvent =
   | { type: "meta"; model: string }
+  | { type: "quality"; issues: import("./quality").QualityIssue[] }
   /** Conversational text from the model (streamed before/between file blocks). */
   | { type: "text"; text: string }
   | { type: "file_start"; name: SiteFileName }

@@ -1,0 +1,7 @@
+'use client';
+import {useRef,useState} from 'react';
+export function PluginTool({id,label}:{id:string;label:string}){
+ const [input,setInput]=useState('');const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [result,setResult]=useState<unknown>();const pending=useRef(false);
+ async function run(){if(pending.current)return;pending.current=true;setBusy(true);setError('');setResult(undefined);try{const r=await fetch(id==='assistant'?'/api/plugins/ask':'/api/plugins/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(id==='assistant'?{question:input}:{plugin:id,input})});const d=await r.json();if(!r.ok)throw Error(d.error);setResult(d);}catch(e){setError(e instanceof Error?e.message:'Lookup failed.');}finally{setBusy(false);pending.current=false;}}
+ return <div className="mt-3"><form className="flex flex-wrap gap-2" onSubmit={e=>{e.preventDefault();void run();}}><input aria-label={label} required value={input} maxLength={id==='assistant'?2000:254} onChange={e=>setInput(e.target.value)} className="platform-input min-w-0 flex-1" placeholder={label}/><button className="platform-button" disabled={busy||!input.trim()}>{busy?'Checking…':'Look up'}</button></form>{error&&<p role="alert" className="mt-2 text-sm text-destructive">{error}</p>}{result!==undefined&&<pre role="status" className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg border p-3 text-xs">{JSON.stringify(result,null,2)}</pre>}</div>;
+}

@@ -1,4 +1,5 @@
 "use client";
+import type {QualityIssue} from "@/lib/build/quality";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -39,6 +40,9 @@ function createMessage(role: ChatMessage["role"], content: string): ChatMessage 
  */
 export function useBuilder(options: { userId: string; model: string; project: ProjectSnapshot }) {
   const router = useRouter();
+  const savedSettings=options.project.settings&&typeof options.project.settings==='object'&&!Array.isArray(options.project.settings)?options.project.settings:{};
+  const [modelMode,setModelMode]=useState<'automatic'|'manual'>(()=>savedSettings.modelMode==='automatic'?'automatic':'manual');
+  const [quality,setQuality]=useState<QualityIssue[]>([]);
   const storageKey = `${STORAGE_PREFIX}${options.userId}:${options.project.id}`;
   const [initial] = useState(() => ({files:options.project.files,messages:options.project.conversation,model:options.project.model,version:options.project.revision}));
 
@@ -86,6 +90,7 @@ export function useBuilder(options: { userId: string; model: string; project: Pr
   }, []);
 
   const setModel = useCallback((next: string) => {
+    setModelMode("manual");
     modelRef.current = next;
     setModelState(next);
   }, []);
@@ -125,7 +130,7 @@ export function useBuilder(options: { userId: string; model: string; project: Pr
         setWriting(null);
       };
 
-      const body: BuildRequestBody = { instruction: trimmed, files: filesRef.current, model: modelRef.current, history, projectId:options.project.id, revision:revisionRef.current };
+      const body: BuildRequestBody = { modelMode,instruction: trimmed, files: filesRef.current, model: modelRef.current, history, projectId:options.project.id, revision:revisionRef.current };
 
       try {
         const response = await fetch("/api/build", {
@@ -149,6 +154,11 @@ export function useBuilder(options: { userId: string; model: string; project: Pr
           if (controller.signal.aborted) return;
           switch (event.type) {
             case "meta":
+              setModelState(event.model);
+              modelRef.current=event.model;
+              break;
+            case "quality":
+              setQuality(event.issues);
               break;
             case "text":
               text += event.text;
@@ -215,7 +225,7 @@ export function useBuilder(options: { userId: string; model: string; project: Pr
         if (abortRef.current === controller) abortRef.current = null;
       }
     },
-    [commitFiles, commitMessages, isBusy, router, options.project.id],
+    [commitFiles, commitMessages, isBusy, router, options.project.id,modelMode],
   );
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
@@ -244,6 +254,7 @@ export function useBuilder(options: { userId: string; model: string; project: Pr
   }, [storageKey]);
 
   return {
+    modelMode,setModelMode,quality,
     messages,
     files,
     version,
