@@ -40,7 +40,7 @@ const messages = {
   CANCELLED: 'The integration request was cancelled.',
   INVALID_ARGUMENTS: 'The tool arguments are invalid or too large.',
   TOOL_FAILED: 'The external tool reported a failure. No success was confirmed.',
-  LIMIT_EXCEEDED: 'This integration returned more tools than can safely be loaded.',
+  LIMIT_EXCEEDED: 'This integration returned too much data. Narrow the request and try again.',
 } as const;
 
 export class McpClientError extends Error {
@@ -103,13 +103,25 @@ export async function withMcpClient<T>(
           ...(init?.signal ? [init.signal] : []),
         ]),
       });
+      const rateLimited = response.status === 429 || (response.status === 403 &&
+        (response.headers.get('x-ratelimit-remaining') === '0' || response.headers.has('retry-after')));
       if (response.status === 401 || response.status === 403 || response.status === 429 || response.status >= 500) {
         const raw = response.headers.get('retry-after');
         const retryAfter = raw && /^\d{1,6}$/.test(raw) ? Number(raw) : undefined;
         await response.body?.cancel();
-        throw new McpClientError(response.status === 429 ? 'RATE_LIMITED' : response.status < 500 ? 'AUTHENTICATION_REQUIRED' : 'UNAVAILABLE', retryAfter);
+        throw new McpClientError(rateLimited ? 'RATE_LIMITED' : response.status < 500 ? 'AUTHENTICATION_REQUIRED' : 'UNAVAILABLE', retryAfter);
       }
-      return response;
+      // Bound each protocol response, including SSE, before the SDK parses it.
+      // A remote repository/file response must not exhaust the server's memory.
+      if (!response.body) return response;
+      let bytes = 0;
+      return new Response(response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          bytes += chunk.byteLength;
+          if (bytes > 2_000_000) throw new McpClientError('LIMIT_EXCEEDED');
+          controller.enqueue(chunk);
+        },
+      })), { status: response.status, statusText: response.statusText, headers: response.headers });
     },
   });
   const requestOptions = { signal, timeout: timeoutMs, maxTotalTimeout: timeoutMs };

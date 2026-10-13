@@ -85,7 +85,7 @@ test('MCP surfaces tool errors safely and does not report success', async (t) =>
 
 for (const [status, code] of [[401, 'AUTHENTICATION_REQUIRED'], [403, 'AUTHENTICATION_REQUIRED'], [429, 'RATE_LIMITED'], [503, 'UNAVAILABLE']]) {
   test(`MCP handles HTTP ${status} without retries or secret error text`, async (t) => {
-    const calls = fixture(t, { fetch: () => new Response('private provider text', { status, headers: { 'retry-after': '60' } }) });
+    const calls = fixture(t, { fetch: () => new Response('private provider text', { status, headers: status === 429 ? { 'retry-after': '60' } : {} }) });
     await assert.rejects(withMcpClient(server, access, async () => {}), error => hasCode(code)(error) && !error.message.includes('private'));
     assert.equal(calls.length, 1);
   });
@@ -125,4 +125,14 @@ test('MCP cleans up after a callback failure and invalidates escaped sessions', 
   const count = calls.length;
   await assert.rejects(escaped.callTool('lookup', {}), hasCode('UNAVAILABLE'));
   assert.equal(calls.length, count);
+});
+
+test('MCP recognizes GitHub HTTP 403 quota responses instead of requesting new credentials', async (t) => {
+  fixture(t, { fetch: () => new Response('not logged', { status: 403, headers: { 'x-ratelimit-remaining': '0', 'retry-after': '30' } }) });
+  await assert.rejects(withMcpClient(server, access, async () => {}), error => hasCode('RATE_LIMITED')(error) && error.retryAfterSeconds === 30);
+});
+
+test('MCP rejects an oversized protocol response before parsing it', async (t) => {
+  fixture(t, { fetch: () => new Response('x'.repeat(2_000_001), { headers: { 'Content-Type': 'application/json' } }) });
+  await assert.rejects(withMcpClient(server, access, async () => {}), error => error instanceof McpClientError);
 });

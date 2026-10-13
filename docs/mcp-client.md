@@ -67,3 +67,7 @@ npm run build
 Results on 12 October 2026: **58/58 tests passed**, including 14 MCP tests; ESLint passed; Next.js production build passed; standalone TypeScript check passed after generating Next.js route types. A clean checkout needs `next typegen` before checking Next's generated `PageProps`, `LayoutProps` and `RouteContext` types.
 
 No database migration, production configuration change, account permission change, paid API call or production deployment is part of this branch.
+
+## GitHub follow-up (13 October 2026)
+
+The first GitHub App OAuth adapter, encrypted per-user storage migration and Tools panel now live on this same feature branch. See [github-mcp.md](./github-mcp.md) for setup, permissions, testing and the live-verification boundary. The SDK/package versions are unchanged. Its HTTP wrapper now also recognizes GitHub 403 quota responses and bounds each protocol response at 2 MB. GitHub credentials and the development database migration still require manual setup; no production changes were made.
