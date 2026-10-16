@@ -6,23 +6,36 @@ export class GitHubError extends Error {
   constructor(public status: number, public code: string, message: string, public retryAfter?: number) { super(message); }
 }
 const required = ['GITHUB_OAUTH_CLIENT_ID', 'GITHUB_OAUTH_CLIENT_SECRET', 'GITHUB_OAUTH_REDIRECT_URI', 'GITHUB_APP_SLUG', 'INTEGRATION_ENCRYPTION_KEY'] as const;
+// Diagnostics contain only fixed variable names and states, never values or lengths.
+export function githubConfigurationChecks() {
+  const valid: Record<(typeof required)[number], (value: string) => boolean> = {
+    GITHUB_OAUTH_CLIENT_ID: value => /^Iv[0-9A-Za-z.]+$/.test(value),
+    GITHUB_OAUTH_CLIENT_SECRET: value => /^[\x21-\x7e]{16,256}$/.test(value),
+    GITHUB_APP_SLUG: value => /^[a-z0-9-]{1,100}$/.test(value),
+    INTEGRATION_ENCRYPTION_KEY: value => /^[A-Za-z0-9+/]{43}=$/.test(value) && Buffer.from(value, 'base64').length === 32,
+    GITHUB_OAUTH_REDIRECT_URI: value => {
+      try {
+        const url = new URL(value);
+        const local = process.env.NODE_ENV !== 'production' && url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname);
+        return (local || url.protocol === 'https:') && !url.username && !url.password && !url.search && !url.hash && url.pathname === '/api/integrations/github/callback';
+      } catch { return false; }
+    },
+  };
+  return required.map(name => {
+    const value = process.env[name]?.trim();
+    return { name, state: !value ? 'MISSING' : valid[name](value) ? 'VALID' : 'INVALID' };
+  });
+}
 export function githubConfiguration() {
-  const missing = required.filter(name => !process.env[name]?.trim());
-  if (missing.length) throw new GitHubError(503, 'SETUP_REQUIRED', 'GitHub connection setup is required.');
+  const failures = githubConfigurationChecks().filter(check => check.state !== 'VALID');
+  if (failures.length) throw new GitHubError(503, 'SETUP_REQUIRED',
+    `GitHub App configuration requires attention: ${failures.map(check => `${check.name} (${check.state.toLowerCase()})`).join(', ')}. Ask the site owner to check the Preview configuration.`);
   const clientId = process.env.GITHUB_OAUTH_CLIENT_ID!.trim();
   const clientSecret = process.env.GITHUB_OAUTH_CLIENT_SECRET!.trim();
   const redirectUri = process.env.GITHUB_OAUTH_REDIRECT_URI!.trim();
   const slug = process.env.GITHUB_APP_SLUG!.trim();
   const keyText = process.env.INTEGRATION_ENCRYPTION_KEY!.trim();
-  let url: URL;
-  try { url = new URL(redirectUri); } catch { throw new GitHubError(503, 'SETUP_REQUIRED', 'GitHub callback configuration is invalid.'); }
-  const local = process.env.NODE_ENV !== 'production' && url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname);
-  if (!/^Iv[0-9A-Za-z.]+$/.test(clientId) || !/^[\x21-\x7e]{16,256}$/.test(clientSecret) ||
-      !/^[a-z0-9-]{1,100}$/.test(slug) || !/^[A-Za-z0-9+/]{43}=$/.test(keyText) ||
-      Buffer.from(keyText, 'base64').length !== 32 || (!local && url.protocol !== 'https:') ||
-      url.username || url.password || url.search || url.hash || url.pathname !== '/api/integrations/github/callback') {
-    throw new GitHubError(503, 'SETUP_REQUIRED', 'GitHub server configuration is invalid. Use a GitHub App client ID and a 32-byte encryption key.');
-  }
+  const url = new URL(redirectUri);
   return { clientId, clientSecret, redirectUri, origin: url.origin, slug, key: Buffer.from(keyText, 'base64'), secure: url.protocol === 'https:' };
 }
 export const randomSecret = () => randomBytes(32).toString('base64url');

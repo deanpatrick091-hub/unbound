@@ -115,3 +115,13 @@ Significantly changed/created files:
 - `docs/github-mcp.md`, `docs/mcp-client.md`
 
 For browser fixture checks, `check-github-ui.mjs` needs a production build's CSS and test-only esbuild, Playwright and Chromium installations. Set `TEST_TOOLS_DIR`, `CHROMIUM_EXECUTABLE` and the runtime's `CODEX_PRIMARY_RUNTIME_NODE_MODULES`; `SCREENSHOT_PATH` is optional. None of these test tools are added to the deployed app's package dependencies.
+
+## Diagnosing Setup required safely
+
+The authenticated status endpoint reports the names of missing or invalid settings, never their values. Validators are shared with the server configuration loader; a configuration error cannot enable Connect. Unexpected errors are handled separately rather than mislabeled as missing credentials.
+
+For a deployment-local diagnostic, run:
+```sh
+node --import ./scripts/test-loader.mjs scripts/check-github-config.mjs
+```
+This prints only the five fixed variable names and VALID/MISSING/INVALID. It does not authenticate the app or prove GitHub accepts the credentials. Do not download or print secrets to troubleshoot. After a Preview-scoped change, redeploy the feature branch; existing deployments retain their environment snapshot. Keep the encryption key unchanged.

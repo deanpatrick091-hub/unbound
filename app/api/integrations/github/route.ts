@@ -1,5 +1,5 @@
 import { githubSession, githubErrorResponse, privateHeaders } from '@/lib/github/http';
-import { context, credentialSchema, decrypt, githubConfiguration } from '@/lib/github/security';
+import { context, credentialSchema, decrypt, GitHubError, githubConfiguration } from '@/lib/github/security';
 import { connection } from '@/lib/github/store';
 import type { GitHubStatus } from '@/lib/github/types';
 export const runtime = 'nodejs';
@@ -7,7 +7,9 @@ export async function GET(request: Request) {
   try {
     const { db, userId } = await githubSession(request);
     let config;
-    try { config = githubConfiguration(); } catch { return Response.json({ state: 'SETUP_REQUIRED', message: 'The site owner needs to configure the GitHub App credentials and encryption key.' } satisfies GitHubStatus, { headers: privateHeaders }); }
+    try { config = githubConfiguration(); } catch (error) {
+      if (!(error instanceof GitHubError) || error.code !== 'SETUP_REQUIRED') throw error;
+      return Response.json({ state: 'SETUP_REQUIRED', message: error.message } satisfies GitHubStatus, { headers: privateHeaders }); }
     const installUrl = `https://github.com/apps/${config.slug}/installations/new`;
     const row = await connection(db, userId);
     if (!row) return Response.json({ state: 'DISCONNECTED', installUrl } satisfies GitHubStatus, { headers: privateHeaders });

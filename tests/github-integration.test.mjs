@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
-import { encrypt, decrypt, context, challenge, githubConfiguration } from '../lib/github/security.ts';
+import { encrypt, decrypt, context, challenge, githubConfiguration, githubConfigurationChecks } from '../lib/github/security.ts';
 import { GITHUB_MCP, discoverGitHubOAuth, githubTool, tokenRequest, verifyGitHubAccount, revokeGitHubToken } from '../lib/github/provider.ts';
 
 function config(t) {
@@ -77,4 +77,19 @@ test('GitHub rate limit and invalid-token responses are safe and never retried',
   config(t); let calls = 0;
   t.mock.method(globalThis, 'fetch', async () => { calls++; return new Response('sensitive provider text', { status: 403, headers: { 'x-ratelimit-remaining': '0', 'retry-after': '120' } }); });
   await assert.rejects(tokenRequest({ code: 'fixture' }), e => e.code === 'RATE_LIMITED' && e.retryAfter === 120 && !e.message.includes('sensitive')); assert.equal(calls, 1);
+});
+
+test('configuration diagnostics identify each failing field without leaking supplied values', t => {
+  config(t);
+  assert.ok(githubConfigurationChecks().every(check => check.state === 'VALID'));
+  for (const { name } of githubConfigurationChecks()) {
+    const original = process.env[name];
+    for (const value of ['', ' invalid-sensitive-fixture ! ']) {
+      process.env[name] = value;
+      const failures = githubConfigurationChecks().filter(check => check.state !== 'VALID');
+      assert.deepEqual(failures, [{ name, state: value ? 'INVALID' : 'MISSING' }]);
+      assert.throws(githubConfiguration, error => error.message.includes(name) && !error.message.includes('sensitive-fixture'));
+    }
+    process.env[name] = original;
+  }
 });
