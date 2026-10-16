@@ -1,0 +1,60 @@
+// Run against a local, disposable PostgreSQL engine; never production.
+// PGLITE_MODULE points to the separately installed @electric-sql/pglite package.
+import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+const require = createRequire(import.meta.url);
+if (!process.env.PGLITE_MODULE) throw Error('Set PGLITE_MODULE to a test-only @electric-sql/pglite installation.');
+const { PGlite } = require(process.env.PGLITE_MODULE);
+const db = new PGlite();
+const a = '11111111-1111-4111-8111-111111111111', b = '22222222-2222-4222-8222-222222222222', id = '33333333-3333-4333-8333-333333333333';
+const cipher = 'v1.' + 'x'.repeat(90), hash = 'a'.repeat(64);
+try {
+  await db.exec(`create role anon; create role authenticated; create schema auth;
+    create table auth.users(id uuid primary key);
+    create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+    create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb $$;
+    grant usage on schema auth, public to authenticated, anon;
+    insert into auth.users values ('${a}'), ('${b}');`);
+  await db.exec(readFileSync(new URL('../supabase/migrations/20261013135751_github_mcp_connections.sql', import.meta.url), 'utf8'));
+  const assume = async (user, anonymous = false) => {
+    await db.exec('reset role; set role authenticated;');
+    await db.query("select set_config('request.jwt.claim.sub', $1, false), set_config('request.jwt.claims', $2, false)", [user, JSON.stringify({ is_anonymous: anonymous })]);
+  };
+  const pending = () => db.query('insert into public.github_oauth_states(user_id,state_hash,state_ciphertext,expires_at) values ($1,$2,$3,now()+interval \'10 minutes\')', [a, hash, cipher]);
+  await assume(a); await pending();
+  const claim = () => db.query('update public.github_oauth_states set claimed=true where user_id=$1 and state_hash=$2 and not claimed returning user_id', [a, hash]);
+  assert.equal((await claim()).rows.length, 1); assert.equal((await claim()).rows.length, 0, 'OAuth state can be claimed once');
+  await assume(b);
+  assert.equal((await db.query('select * from public.github_oauth_states')).rows.length, 0);
+  await assert.rejects(db.query('select public.complete_github_oauth($1,$2,$3)', [hash, id, cipher]), /expired/);
+  await assume(a); await db.query('select public.complete_github_oauth($1,$2,$3)', [hash, id, cipher]);
+  assert.equal((await db.query('select * from public.github_oauth_states')).rows.length, 0);
+  assert.equal((await db.query('select * from public.github_connections')).rows.length, 1);
+  await assert.rejects(db.query('select public.complete_github_oauth($1,$2,$3)', [hash, id, cipher]), /expired/, 'callback replay fails');
+  await assert.rejects(db.query('update public.github_connections set user_id=$1', [b]), /row-level security/);
+  await assume(b);
+  assert.equal((await db.query('select * from public.github_connections')).rows.length, 0);
+  assert.equal((await db.query('delete from public.github_connections where user_id=$1 returning user_id', [a])).rows.length, 0);
+  await assert.rejects(db.query('insert into public.github_connections(user_id,connection_id,credential_ciphertext) values ($1,$2,$3)', [a, '44444444-4444-4444-8444-444444444444', cipher]), /row-level security/);
+  await assume(a, true);
+  assert.equal((await db.query('select * from public.github_connections')).rows.length, 0);
+  await assert.rejects(pending(), /row-level security/);
+  await db.exec('reset role; set role anon;');
+  await assert.rejects(db.query('select * from public.github_connections'), /permission denied/);
+  await assert.rejects(db.query('select public.complete_github_oauth($1,$2,$3)', [hash, id, cipher]), /permission denied/);
+  await assume(a);
+  const lock = () => db.query("update public.github_connections set refresh_lock_until=now()+interval '45 seconds' where user_id=$1 and refresh_lock_until < now() returning connection_id", [a]);
+  assert.equal((await lock()).rows.length, 1); assert.equal((await lock()).rows.length, 0, 'only one refresh acquires a lease');
+  await pending(); await claim();
+  await db.query('delete from public.github_oauth_states where user_id=$1', [a]);
+  await db.query('delete from public.github_connections where user_id=$1', [a]);
+  await assert.rejects(db.query('select public.complete_github_oauth($1,$2,$3)', [hash, id, cipher]), /expired/, 'disconnect cancels pending callback');
+  assert.equal((await db.query('select * from public.github_connections')).rows.length, 0);
+  await db.exec('reset role;');
+  const security = await db.query("select relname, relrowsecurity from pg_class where relname in ('github_connections','github_oauth_states')");
+  assert.ok(security.rows.every(row => row.relrowsecurity));
+  const fn = await db.query("select prosecdef from pg_proc where proname='complete_github_oauth'");
+  assert.equal(fn.rows[0].prosecdef, false);
+  console.log('PASS: migration executes; owner isolation; anonymous denial; callback replay; ownership transfer denial; invoker RPC; refresh lease; disconnect prevents callback restoration.');
+} finally { await db.close(); }

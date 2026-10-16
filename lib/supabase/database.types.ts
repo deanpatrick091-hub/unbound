@@ -1,3 +1,4 @@
+import type {GitHubConnectionRow, GitHubOAuthStateRow} from '@/lib/github/types';
 import type {VideoJob} from '@/lib/videos/types';
 import type { ProjectRow,HandleRow,MemberRow,InviteRow,FileRow,VersionRow,AssetRow,PinRow,IntegrationJobRow } from '@/lib/projects/types';
 /**
@@ -105,6 +106,8 @@ type Table<Row, Required extends keyof Row = never> = {
 export type Database = {
   public: {
     Tables: {
+      github_connections: Table<GitHubConnectionRow, 'user_id'|'connection_id'|'credential_ciphertext'>;
+      github_oauth_states: Table<GitHubOAuthStateRow, 'user_id'|'state_hash'|'state_ciphertext'|'expires_at'>;
       video_jobs: Table<VideoJob,'owner_id'|'prompt'|'aspect_ratio'>;
       projects: Table<ProjectRow, 'owner_id'|'model'>;
       user_handles: Table<HandleRow, 'user_id'|'username'|'display_name'>;
@@ -126,6 +129,7 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      complete_github_oauth: {Args: {p_state_hash:string;p_connection_id:string;p_ciphertext:string};Returns:undefined};
       save_project: { Args: {p_id:string;p_revision:number;p_files:Json;p_conversation:Json;p_model:string;p_settings?:Json;p_preview?:Json};Returns:number };
       accept_project_invite: { Args: {p_id:string};Returns:string };
       consume_request: {
