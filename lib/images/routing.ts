@@ -2,19 +2,19 @@ import 'server-only';
 
 /** Instance-local backoff; expires automatically and never disables a model permanently. */
 export function createImageRouter(now = Date.now) {
-  const cooldowns = new Map<string, {until: number; quota: boolean}>();
+  const cooldowns = new Map<string, {until: number; reason: 'quota'|'rate_limit'|'credentials'|'unavailable'}>();
   return async function route<T>(
     providers: string[], selected: string, signal: AbortSignal,
     attempt: (provider: string) => Promise<{status: number; retryAfter?: string | null; value?: T}>,
-  ): Promise<{provider: string; value: T} | {error: 'quota' | 'unavailable'; retryAfter: number}> {
+  ): Promise<{provider: string; value: T} | {error: 'quota' | 'rate_limit' | 'credentials' | 'unavailable'; retryAfter: number}> {
     const ordered = [...new Set(providers)].sort((a, b) => Number(b === selected) - Number(a === selected));
-    let quotaCount = 0;
+    const failures: ('quota'|'rate_limit'|'credentials'|'unavailable')[] = [];
     const waits: number[] = [];
     for (const provider of ordered) {
       signal.throwIfAborted();
       const cooldown = cooldowns.get(provider);
       if (cooldown && cooldown.until > now()) {
-        if (cooldown.quota) quotaCount++;
+        failures.push(cooldown.reason);
         waits.push(Math.ceil((cooldown.until - now()) / 1000));
         continue;
       }
@@ -25,21 +25,23 @@ export function createImageRouter(now = Date.now) {
         if (result.status >= 200 && result.status < 300 && result.value !== undefined) {
           return {provider, value: result.value};
         }
-        const quota = result.status === 402 || result.status === 429;
-        if (quota) quotaCount++;
+        const reason = result.status === 402 ? 'quota' : result.status === 429 ? 'rate_limit' : [401,403].includes(result.status) ? 'credentials' : 'unavailable';
+        failures.push(reason);
         // Respect bounded Retry-After; it can be seconds or an HTTP date.
         const raw = result.retryAfter?.trim();
         const parsed = raw ? (/^\d+$/.test(raw) ? Number(raw) : (Date.parse(raw) - now()) / 1000) : NaN;
-        const seconds = Number.isFinite(parsed) && parsed > 0 ? Math.min(900, Math.max(1, Math.ceil(parsed))) : quota ? 60 : 15;
-        cooldowns.set(provider, {until: now() + seconds * 1000, quota});
+        const seconds = Number.isFinite(parsed) && parsed > 0 ? Math.min(900, Math.max(1, Math.ceil(parsed))) : reason === 'quota' || reason === 'credentials' ? 900 : reason === 'rate_limit' ? 60 : 15;
+        cooldowns.set(provider, {until: now() + seconds * 1000, reason});
         waits.push(seconds);
       } catch {
         signal.throwIfAborted();
-        cooldowns.set(provider, {until: now() + 15000, quota: false});
+        failures.push('unavailable');
+        cooldowns.set(provider, {until: now() + 15000, reason: 'unavailable'});
         waits.push(15);
       }
     }
-    return {error: ordered.length > 0 && quotaCount === ordered.length ? 'quota' : 'unavailable', retryAfter: Math.max(1, Math.min(...waits, 900))};
+    const reason = failures[0];
+    return {error: reason && failures.every(f=>f===reason) ? reason : 'unavailable', retryAfter: Math.max(1, Math.min(...waits, 900))};
   };
 }
 

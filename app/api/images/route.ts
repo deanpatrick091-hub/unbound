@@ -1,4 +1,5 @@
 import {routeImage} from '@/lib/images/routing';
+import {isSameOrigin} from '@/lib/auth/same-origin';
 import {getSession} from '@/lib/auth/session';
 import {errorResponse,limitResponse} from '@/lib/api/responses';
 import {getProviderConfig} from '@/lib/ai/providers';
@@ -15,6 +16,7 @@ export async function GET(){
  return Response.json({images:data},{headers:{'Cache-Control':'private, no-store'}});
 }
 export async function POST(request:Request){
+ if(!isSameOrigin(request))return errorResponse(403,'invalid_request','Reload this page before generating an image.');
  const {supabase,user}=await getSession();if(!user)return errorResponse(401,'unauthorized','Sign in to continue.');
  let body;try{body=await request.json();}catch{return errorResponse(400,'invalid_request','Enter an image description.');}
  const prompt=body?.prompt;const provider=body?.provider??imageProviders()[0]?.id;
@@ -40,7 +42,10 @@ export async function POST(request:Request){
  }); } catch { return errorResponse(504,'network_error','Image generation was interrupted. Your saved images are still available.'); }
  if('error' in result){
   const headers={'Retry-After':String(result.retryAfter),'Cache-Control':'private, no-store'};
-  return result.error==='quota'?errorResponse(429,'rate_limited','All connected free image allowances are busy or exhausted. Please retry after their reset.',headers):errorResponse(503,'network_error','No connected image provider is available right now. Please try again shortly.',headers);
+  if(result.error==='quota')return errorResponse(402,'quota_exhausted','The connected image provider has no inference credit available. The site owner must check its credit balance or configure another provider. Retrying immediately will not restore credit.',headers);
+  if(result.error==='rate_limit')return errorResponse(429,'rate_limited','The image provider is rate limited. Wait before trying again.',headers);
+  if(result.error==='credentials')return errorResponse(503,'not_configured','The image provider rejected its credentials or permissions. The site owner must check the server connection.',headers);
+  return errorResponse(503,'network_error','No connected image provider could complete this request. Please try again later.',headers);
  }
  const {src,mime}=result.value;
  const saved=await supabase.from('project_assets').insert({owner_id:user.id,project_id:projectId,prompt:prompt.trim(),provider:result.provider,mime_type:mime,data_url:src}).select('id,created_at').single();

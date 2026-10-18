@@ -2,6 +2,12 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createImageRouter} from '../lib/images/routing.ts';
 const signal = new AbortController().signal;
+test('credit exhaustion and credentials are distinct from temporary rate limiting',async()=>{
+ for(const [status,expected] of [[402,'quota'],[401,'credentials'],[403,'credentials'],[429,'rate_limit'],[503,'unavailable']]){
+  const result=await createImageRouter()(['hf'],'hf',signal,async()=>({status}));
+  assert.equal(result.error,expected);
+ }
+});
 test('image quota automatically switches to another connected provider and skips cooling provider', async()=>{
  let time=0;const route=createImageRouter(()=>time);const calls=[];
  const attempt=async id=>{calls.push(id);return id==='hf'?{status:429,retryAfter:'120'}:{status:200,value:'real-result'};};
@@ -18,7 +24,7 @@ test('mixed failures are not misreported as all quotas exhausted', async()=>{
 });
 test('all exhausted providers return bounded backoff including HTTP date', async()=>{
  const route=createImageRouter(()=>0);
- assert.deepEqual(await route(['hf'],'hf',signal,async()=>({status:429,retryAfter:new Date(9000000).toUTCString()})),{error:'quota',retryAfter:900});
+ assert.deepEqual(await route(['hf'],'hf',signal,async()=>({status:429,retryAfter:new Date(9000000).toUTCString()})),{error:'rate_limit',retryAfter:900});
 });
 test('invalid image or network failure falls back; aborted request never starts another provider', async()=>{
  const route=createImageRouter();const calls=[];
