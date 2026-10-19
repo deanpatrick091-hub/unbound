@@ -7,7 +7,7 @@ The reported inference-credit error is the image route's HTTP 402 mapping. Huggi
 | Provider | Implementation | Live evidence / requirement |
 | --- | --- | --- |
 | AI Horde, Realistic Vision / Deliberate | New asynchronous adapter, available anonymously | A real Deliberate image of a red teapot was generated, retrieved as inline WebP and visually inspected on October 19. Realistic Vision has not been individually tested. Community availability varies. |
-| Hugging Face, FLUX.1 Schnell | Existing adapter preserved; manual selection only | User-reported credit failure; no new successful generation. No billing changes made. |
+| Hugging Face, FLUX.1 Schnell | Existing adapter preserved; manual selection only | Signed-in reproduction and Vercel runtime log confirmed HTTP 402 from huggingface on October 19; no successful HF generation. No billing changes made. |
 | Cloudflare, FLUX.1 Schnell | Existing adapter preserved | Not live-tested: account ID/token and free-plan confirmation not configured. Official allowance is 10,000 neurons/day; a Free account stops at its cap. |
 | Self-hosted LocalAI | New opt-in OpenAI-compatible adapter | Not live-tested: no user-hosted image server configured. Hardware/electricity/hosting still cost money. |
 
@@ -46,6 +46,6 @@ LocalAI must return `data[0].b64_json`; redirect responses and URL-only images a
 
 Automated coverage includes 402-to-queue fallback, queued/finished states, censored results, untrusted URL rejection, Retry-After, configuration validation, idempotent asset saving, cross-user isolation and same-origin enforcement. Network and session/database boundaries are fixtures in these tests, not live end-to-end tests.
 
-Provider API generation succeeded; the signed-in production generate/display/download/save/reopen workflow still requires an authenticated browser test. A successful build or an adapter fixture is not proof of that workflow.
+Verified on production commit `145dfd4` on October 19, 2026: signed in, selected Hugging Face, opted into community fallback, and submitted a non-sensitive teapot prompt. HF failed with HTTP 402; AI Horde Deliberate completed the request. The job recorded its saved asset. After closing/reopening the browser tab, the image was present in Recent Images, reopened successfully, and decoded at 512×512. Download completed. Save to project returned “Saved to project assets”; the database contained both the history image and a separate project copy. No application console errors were observed (browser-extension metadata errors were unrelated). Pending-queue refresh was not individually observed; completed-image persistence was verified.\n\nValidation: 85 automated tests passed, TypeScript and lint passed, local production build passed, and Vercel Preview and Production builds completed successfully. Production deployment `dpl_BiY6AFzUdh8hrYGkMkFLdcXmSYPV` is Ready and serves `unbound-lilac.vercel.app`. No secrets or database schema were changed.
 
 Manual acceptance: sign into Unbound, open Images, choose AI Horde, read/check community consent, submit a non-sensitive prompt, wait for completion, download, save to a project, then refresh and reopen from Recent Images. During a queue, refresh once to verify resume. Existing images should remain visible if the new request fails.
