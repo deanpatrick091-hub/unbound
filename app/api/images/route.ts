@@ -8,12 +8,15 @@ import {imageProviders} from '@/lib/images/providers';
 import {imageMime} from '@/lib/images/validate';
 import {boundedText} from '@/lib/integrations/server';
 import {getProject,isUuid} from '@/lib/projects/server';
+import {startCommunity,cancelCommunity} from '@/lib/images/community';
+import {selfHostedImageConfig} from '@/lib/images/self-hosted';
 export const maxDuration=120;
 export async function GET(){
  const {supabase,user}=await getSession();if(!user)return errorResponse(401,'unauthorized','Sign in to continue.');
  const {data,error}=await supabase.from('project_assets').select('id,prompt,provider,mime_type,created_at,project_id').eq('owner_id',user.id).is('history_deleted_at',null).order('created_at',{ascending:false}).limit(30);
  if(error)return errorResponse(503,'storage_error','Image history could not be loaded.');
- return Response.json({images:data},{headers:{'Cache-Control':'private, no-store'}});
+ const jobs=await supabase.from('integration_jobs').select('id,input').eq('user_id',user.id).eq('provider','aihorde').is('result',null).gt('created_at',new Date(Date.now()-1800000).toISOString()).order('created_at',{ascending:false}).limit(1);
+ return Response.json({images:data,pending:jobs.data?.[0]??null},{headers:{'Cache-Control':'private, no-store'}});
 }
 export async function POST(request:Request){
  if(!isSameOrigin(request))return errorResponse(403,'invalid_request','Reload this page before generating an image.');
@@ -25,10 +28,20 @@ export async function POST(request:Request){
  const projectId=body.projectId??null;
  if(projectId){const p=isUuid(projectId)?await getProject(projectId):null;if(!p||p.role==='viewer')return errorResponse(403,'invalid_request','You cannot save images to this project.');}
  const limit=await consumeRequest(supabase,'build');if(!limit.allowed)return limitResponse(limit);if(limit.degraded)return errorResponse(503,'upstream_error','The usage check is temporarily unavailable.');
- const choices=imageProviders().sort((a,b)=>Number(b.id===provider)-Number(a.id===provider));
+ const choices=imageProviders().filter(p=>(p.id!=='aihorde'||body.communityConsent===true)&&(p.id!=='huggingface'||provider==='huggingface')).sort((a,b)=>Number(b.id===provider)-Number(a.id===provider));
+ if(provider==='aihorde'&&body.communityConsent!==true)return errorResponse(400,'invalid_request','Allow community processing before using AI Horde. Anonymous generations are shared for dataset research.');
+ const active=await supabase.from('integration_jobs').select('id,input').eq('user_id',user.id).eq('provider','aihorde').is('result',null).gt('created_at',new Date(Date.now()-1800000).toISOString()).limit(1).maybeSingle();
+ if(active.data)return Response.json({jobId:active.data.id,prompt:active.data.input,provider:'aihorde'},{status:202,headers:{'Cache-Control':'private, no-store'}});
  const signal=AbortSignal.any([request.signal,AbortSignal.timeout(100000)]);
  let result;
- try { result=await routeImage(choices.map(choice=>choice.id),provider,signal,async provider=>{
+ try { result=await routeImage<{src:string;mime:string}|{remoteId:string}>(choices.map(choice=>choice.id),provider,signal,async provider=>{
+ if(provider==='aihorde'){const queued=await startCommunity(prompt.trim(),signal);return {...queued,value:queued.id?{remoteId:queued.id}:undefined};}
+ if(provider==='self-hosted'){
+  const local=selfHostedImageConfig();if(!local)return {status:503};
+  const response=await fetch(local.url,{method:'POST',redirect:'error',cache:'no-store',headers:{Authorization:'Bearer '+local.key,'Content-Type':'application/json'},body:JSON.stringify({model:local.model,prompt:prompt.trim(),n:1,size:'512x512',response_format:'b64_json'}),signal:AbortSignal.any([signal,AbortSignal.timeout(45000)])});
+  if(!response.ok){await response.body?.cancel();return {status:response.status,retryAfter:response.headers.get('retry-after')};}
+  const d=JSON.parse(await boundedText(response,6000000));const {imageBytes}=await import('@/lib/images/community');return {status:200,value:imageBytes(d.data?.[0]?.b64_json)};
+ }
  const config=getProviderConfig(provider==='huggingface'?'huggingface':'cloudflare');
  if(!config||config.kind!=='openai-compatible')return {status:503};
   const hf=provider==='huggingface';
@@ -46,6 +59,11 @@ export async function POST(request:Request){
   if(result.error==='rate_limit')return errorResponse(429,'rate_limited','The image provider is rate limited. Wait before trying again.',headers);
   if(result.error==='credentials')return errorResponse(503,'not_configured','The image provider rejected its credentials or permissions. The site owner must check the server connection.',headers);
   return errorResponse(503,'network_error','No connected image provider could complete this request. Please try again later.',headers);
+ }
+ if('remoteId' in result.value){
+  const job=await supabase.from('integration_jobs').insert({user_id:user.id,provider:'aihorde',remote_id:result.value.remoteId,input:prompt.trim()}).select('id').single();
+  if(job.error){await cancelCommunity(result.value.remoteId);return errorResponse(503,'storage_error','Could not save the queued image request. Please retry later.');}
+  return Response.json({jobId:job.data.id,prompt:prompt.trim(),provider:'aihorde',message:'Queued with AI Horde. The image will save to Recent Images; you can then add it to a project.'},{status:202,headers:{'Cache-Control':'private, no-store'}});
  }
  const {src,mime}=result.value;
  const saved=await supabase.from('project_assets').insert({owner_id:user.id,project_id:projectId,prompt:prompt.trim(),provider:result.provider,mime_type:mime,data_url:src}).select('id,created_at').single();
