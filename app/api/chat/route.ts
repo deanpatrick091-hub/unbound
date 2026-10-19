@@ -1,3 +1,6 @@
+import {isSameOrigin} from '@/lib/auth/same-origin';
+import {executeChatTool} from '@/lib/chat/tool-executor';
+import {naturalMediaTool} from '@/lib/chat/tools';
 import type { NextRequest } from "next/server";
 
 import { errorResponse, limitResponse, NDJSON_HEADERS } from "@/lib/api/responses";
@@ -20,7 +23,7 @@ import { resolveModel } from "@/lib/ai/models";
 import { consumeRequest } from "@/lib/limits/consume";
 
 // Gemini responses can run longer than the default serverless timeout.
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 /**
  * POST /api/chat
@@ -31,6 +34,7 @@ export const maxDuration = 120;
  * Every database call runs under the caller's RLS session.
  */
 export async function POST(request: NextRequest): Promise<Response> {
+  if(!isSameOrigin(request))return errorResponse(403,"invalid_request","Reload this page before sending a message.");
   const { supabase, user } = await getSession();
   if (!user) return errorResponse(401, "unauthorized", "Sign in to continue.");
 
@@ -67,6 +71,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   // limiter lets the request through (logged); an over-budget verdict does not.
   const limit = await consumeRequest(supabase, "chat");
   if (!limit.allowed) return limitResponse(limit);
+  if(limit.degraded&&(!parsed.data.retry&&(parsed.data.tools?.tool||naturalMediaTool(content??''))))return errorResponse(503,"upstream_error","Tool usage checks are temporarily unavailable.");
 
   // Persistence is best-effort: if the database can't store this turn, the
   // reply is still generated and streamed, just not saved.
@@ -162,7 +167,13 @@ export async function POST(request: NextRequest): Promise<Response> {
         // The model that actually answered (may differ after a rate-limit fallback).
         let usedModel = model;
 
-        for await (const event of streamWithFallback({
+        // A generic chat retry must not duplicate media submissions or external operations.
+        const options=parsed.data.retry?undefined:parsed.data.tools;
+        const tool=parsed.data.retry?undefined:options?.tool??naturalMediaTool(last.content);
+        if(tool){
+          text=await executeChatTool(request,last.content,{...options,tool},model);
+          send({type:'text',text});
+        } else for await (const event of streamWithFallback({
           model,
           systemInstruction: CHAT_SYSTEM_INSTRUCTION,
           turns,

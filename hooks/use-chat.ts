@@ -10,6 +10,7 @@ import type {
   ChatRequestBody,
   ChatStreamEvent,
 } from "@/lib/chat/types";
+import type {ChatToolOptions} from '@/lib/chat/tools';
 import { describeModel } from "@/lib/ai/models";
 import { createId, readErrorBody, readNdjson } from "@/lib/stream/ndjson";
 
@@ -40,7 +41,7 @@ export interface UseChatResult {
   persisted: boolean;
   model: string;
   setModel: (model: string) => void;
-  sendMessage: (content: string) => Promise<void>;
+  sendMessage: (content: string, tools?: ChatToolOptions) => Promise<void>;
   stop: () => void;
   retry: () => Promise<void>;
   clearError: () => void;
@@ -203,7 +204,7 @@ export function useChat(options: UseChatOptions): UseChatResult {
   );
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, tools?: ChatToolOptions) => {
       const trimmed = content.trim();
       if (!trimmed || isBusy) return;
       const user = createMessage("user", trimmed);
@@ -211,6 +212,7 @@ export function useChat(options: UseChatOptions): UseChatResult {
         {
           conversationId: conversationRef.current ?? undefined,
           content: trimmed,
+          tools,
           model: modelRef.current,
           history: fallbackHistory(messagesRef.current),
         },

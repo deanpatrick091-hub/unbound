@@ -1,3 +1,4 @@
+import type {ChatToolOptions} from '@/lib/chat/tools';
 /**
  * Shared chat types. Safe to import from both server and client code —
  * this module must never import anything server-only.
@@ -32,6 +33,7 @@ export type ChatRequestBody =
       /** Omit to start a new conversation. */
       conversationId?: string;
       content: string;
+      tools?: ChatToolOptions;
       /** Validated against the server allowlist; falls back to the user's default. */
       model?: string;
       /**

@@ -1,4 +1,6 @@
 "use client";
+import {useSearchParams} from 'next/navigation';
+import {CHAT_TOOLS} from '@/lib/chat/tools';
 
 import { useCallback } from "react";
 import { AlertCircle, CloudOff, RotateCcw, X } from "lucide-react";
@@ -27,6 +29,8 @@ const STATUS_ANNOUNCEMENTS: Record<ChatStatus, string> = {
 };
 
 export function ChatScreen({ conversationId, title, initialMessages, model }: ChatScreenProps) {
+  const searchParams=useSearchParams();
+  const selectedTool=CHAT_TOOLS.find(t=>t.id===searchParams.get('tool'))?.id;
   const { models, upsertConversation, refreshConversations } = useShell();
 
   const onConversationCreated = useCallback(
@@ -113,11 +117,11 @@ export function ChatScreen({ conversationId, title, initialMessages, model }: Ch
       ) : null}
 
       {!chat.messages.length&&<div className="mx-auto mb-2 flex gap-4 text-xs text-muted-foreground"><Link href="/build">Build a website ↗</Link><Link href="/image-gen">Generate an image ↗</Link><Link href="/tools">Research ↗</Link></div>}
-      <Composer
+      <Composer enableTools initialTool={selectedTool}
         isBusy={chat.isBusy}
         model={chat.model}
         onModelChange={chat.setModel}
-        onSend={(content) => void chat.sendMessage(content)}
+        onSend={(content, tools) => void chat.sendMessage(content, tools)}
         onStop={chat.stop}
         suggestions={chat.messages.length?["Explain that further","Give me an example"]:["Explain something","Help me code","Plan an idea"]}
         autoFocus={initialMessages.length === 0}

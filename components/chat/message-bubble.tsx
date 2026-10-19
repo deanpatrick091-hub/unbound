@@ -1,3 +1,5 @@
+import {splitArtifact} from '@/lib/chat/tools';
+import {MediaArtifact} from '@/components/chat/media-artifact';
 import { memo } from "react";
 
 import { Markdown } from "@/components/markdown";
@@ -11,6 +13,7 @@ interface MessageBubbleProps {
 }
 
 export const MessageBubble = memo(function MessageBubble({ message, isStreaming = false }: MessageBubbleProps) {
+  const rendered=splitArtifact(message.content);
   const isUser = message.role === "user";
   const isPending = !isUser && isStreaming && message.content.length === 0;
 
@@ -37,7 +40,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming 
         {isPending ? (
           <TypingIndicator />
         ) : (
-          <Markdown content={message.content} />
+          <><Markdown content={rendered.text} />{rendered.artifact&&<MediaArtifact key={rendered.artifact.id} artifact={rendered.artifact}/>}</>
         )}
         {message.status === "cancelled" ? (
           <p className="mt-2 text-[11px] text-subtle">Stopped</p>

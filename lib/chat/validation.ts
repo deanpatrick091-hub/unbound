@@ -1,3 +1,4 @@
+import {CHAT_TOOLS,type ChatToolOptions} from '@/lib/chat/tools';
 import { CHAT_LIMITS, type ChatHistoryTurn, type ChatRequestBody } from "@/lib/chat/types";
 
 export type ParseResult<T> = { ok: true; data: T } | { ok: false; message: string };
@@ -43,13 +44,19 @@ export function parseChatRequest(body: unknown): ParseResult<ChatRequestBody> {
     return { ok: true, data: { conversationId, model, retry: true } };
   }
 
+  let tools: ChatToolOptions | undefined;
+  if(body.tools!==undefined){
+    const t=body.tools;
+    if(!isRecord(t)||t.tool!==undefined&&!CHAT_TOOLS.some(v=>v.id===t.tool)||t.communityConsent!==undefined&&typeof t.communityConsent!=='boolean'||t.aspectRatio!==undefined&&!['16:9','9:16'].includes(String(t.aspectRatio)))return {ok:false,message:'Invalid tool settings.'};
+    tools={tool:t.tool as ChatToolOptions['tool'],communityConsent:t.communityConsent===true,aspectRatio:t.aspectRatio as ChatToolOptions['aspectRatio']};
+  }
   const content = parseContent(body.content);
   if (!content.ok) return content;
 
   const history = parseHistory(body.history);
   if (!history.ok) return history;
 
-  return { ok: true, data: { content: content.data, conversationId, model, history: history.data } };
+  return { ok: true, data: { content: content.data, conversationId, model, history: history.data, tools } };
 }
 
 /**
