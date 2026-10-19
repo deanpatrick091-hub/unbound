@@ -1,3 +1,4 @@
+import {comfyConfig} from '@/lib/videos/comfy';
 import 'server-only';
 import {videoFailure,videoQuotaBlocked,VIDEO_QUOTA_MESSAGE} from '@/lib/videos/errors';
 import {after} from 'next/server';
@@ -20,15 +21,16 @@ export async function createVideos(request:Request){
  if(!videoAvailable())return Response.json({error:'Video generation is unavailable.'},{status:503});
  let body;try{body=await request.json();}catch{return Response.json({error:'Enter a video prompt.'},{status:400});}
  if(typeof body?.prompt!=='string'||!body.prompt.trim()||body.prompt.length>4000||!['16:9','9:16'].includes(body.aspectRatio))return Response.json({error:'Enter a prompt up to 4,000 characters and choose an aspect ratio.'},{status:400});
+ if(comfyConfig()&&body.aspectRatio!=='16:9')return Response.json({error:'The configured self-hosted workflow supports landscape video only.'},{status:400});
  const previous=await supabase.from('video_jobs').select('error,created_at').eq('owner_id',user.id).eq('error',VIDEO_QUOTA_MESSAGE).order('created_at',{ascending:false}).limit(1).maybeSingle();
  if(previous.error)return Response.json({error:'Video status could not be checked. Please retry later.'},{status:503});
- if(videoQuotaBlocked(previous.data,process.env.VIDEO_QUOTA_RESET_AT))return Response.json({error:VIDEO_QUOTA_MESSAGE},{status:402});
+ if(!comfyConfig()&&videoQuotaBlocked(previous.data,process.env.VIDEO_QUOTA_RESET_AT))return Response.json({error:VIDEO_QUOTA_MESSAGE},{status:402});
  const limit=await consumeRequest(supabase,'build');if(!limit.allowed)return Response.json({error:limit.message},{status:429,headers:limit.retryAfterSeconds?{'Retry-After':String(limit.retryAfterSeconds)}:{}});
  if(limit.degraded)return Response.json({error:'The usage check is temporarily unavailable. Please retry later.'},{status:503});
  const active=await supabase.from('video_jobs').select('id').eq('owner_id',user.id).in('status',['queued','running']).limit(1);
  if(active.error)return Response.json({error:'Could not start a video.'},{status:503});
  if(active.data?.length)return Response.json({error:'A video is already being generated.'},{status:409});
- const {data:job,error}=await supabase.from('video_jobs').insert({owner_id:user.id,prompt:body.prompt.trim(),aspect_ratio:body.aspectRatio}).select('*').single();
+ const {data:job,error}=await supabase.from('video_jobs').insert({owner_id:user.id,prompt:body.prompt.trim(),aspect_ratio:body.aspectRatio,provider:comfyConfig()?'comfyui':'huggingface'}).select('*').single();
  if(error?.code==='23505')return Response.json({error:'A video is already being generated.'},{status:409});
  if(error||!job)return Response.json({error:'Could not save this generation.'},{status:503});
  after(async()=>{

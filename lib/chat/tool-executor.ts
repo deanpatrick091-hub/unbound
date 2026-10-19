@@ -23,7 +23,7 @@ export async function executeChatTool(request:Request,prompt:string,options:Chat
   return 'Your video request is saved. Generation is in progress.'+artifactText({kind:'video',id:data.job.id});
  }
  try{
-  if(options.tool&&['wikimedia','crossref','openalex','semantic','arxiv','jina'].includes(options.tool)){
+  if(options.tool&&['wikimedia','crossref','openalex','semantic','arxiv','jina','npm','openlibrary'].includes(options.tool)){
    const input=options.tool==='jina'?prompt.match(/https:\/\/[^\s]+/)?.[0]:prompt;
    if(!input)return 'Include a public HTTPS webpage URL.';
    const result=await runResearch(options.tool,input,request.signal);

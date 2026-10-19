@@ -116,7 +116,7 @@ export function ChatScreen({ conversationId, title, initialMessages, model }: Ch
         </div>
       ) : null}
 
-      {!chat.messages.length&&<div className="mx-auto mb-2 flex gap-4 text-xs text-muted-foreground"><Link href="/build">Build a website ↗</Link><Link href="/image-gen">Generate an image ↗</Link><Link href="/tools">Research ↗</Link></div>}
+      {!chat.messages.length&&<div className="mx-auto mb-2 flex gap-4 text-xs text-muted-foreground"><Link href="/build">Build a website ↗</Link><Link href="/image-gen">Generate an image ↗</Link><Link href="/plugins">Research ↗</Link></div>}
       <Composer enableTools initialTool={selectedTool}
         isBusy={chat.isBusy}
         model={chat.model}

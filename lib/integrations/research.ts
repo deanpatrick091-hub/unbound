@@ -6,7 +6,7 @@ const clean=(v:unknown)=>typeof v==='string'?v.replace(/<[^>]*>/g,' ').replace(/
 const safeUrl=(v:unknown)=>{try{const u=new URL(String(v));return ['https:','http:'].includes(u.protocol)?u.href:'';}catch{return '';}};
 const result=(title:unknown,url:unknown,excerpt:unknown):ResearchResult=>({title:clean(title).slice(0,250),url:safeUrl(url),excerpt:clean(excerpt).slice(0,900)});
 const markdown=(rows:ResearchResult[])=>rows.map((r,i)=>`${i+1}. ${r.title}\n${r.url}\n${r.excerpt}`).join('\n\n')||'No matching results were returned. Try a more specific query.';
-const arxivCache=new Map<string,{until:number;value:ToolResult}>();let arxivNext=0;
+const arxivCache=new Map<string,{until:number;value:ToolResult}>();let arxivNext=0;let libraryNext=0;
 export async function runResearch(id:string,input:string,signal?:AbortSignal):Promise<ToolResult>{
  if(!input.trim()||input.length>4000)throw new IntegrationError(400,'Use between 1 and 4,000 characters.');
  const {key}=integrationConfig(id);const q=encodeURIComponent(input.trim());
@@ -16,6 +16,12 @@ export async function runResearch(id:string,input:string,signal?:AbortSignal):Pr
  const post=async(url:string,body:unknown,h:HeadersInit=headers)=>JSON.parse(await boundedText(await providerFetch(id,url,{method:'POST',headers:h,body:JSON.stringify(body)},signal)));
  let rows:ResearchResult[]=[];
  switch(id){
+  case 'npm':{const d=await get('https://registry.npmjs.org/-/v1/search?text='+q+'&size=5');rows=(d.objects??[]).map((r:{package:{name:string;description:string;version:string;links?:{npm?:string}}})=>result(r.package.name+' '+r.package.version,r.package.links?.npm??'https://www.npmjs.com/package/'+encodeURIComponent(r.package.name),r.package.description));break;}
+  case 'openlibrary':{
+   if(Date.now()<libraryNext)throw new IntegrationError(429,'Open Library requests are limited to one per second. Please wait.',1);libraryNext=Date.now()+1100;
+   const d=await get('https://openlibrary.org/search.json?q='+q+'&limit=5&fields=key,title,author_name,first_publish_year',{'User-Agent':'UnboundBookSearch/1.0 (https://unbound-lilac.vercel.app)'});
+   rows=(d.docs??[]).map((r:{key:string;title:string;author_name?:string[];first_publish_year?:number})=>result(r.title,/^\/works\/OL[0-9]+W$/.test(r.key)?'https://openlibrary.org'+r.key:'https://openlibrary.org',((r.author_name??[]).slice(0,3).join(', '))+(r.first_publish_year?' · '+r.first_publish_year:'')));break;
+  }
   case 'tavily':{const d=await post('https://api.tavily.com/search',{query:input,search_depth:'basic',max_results:5,include_answer:false});rows=(d.results??[]).map((r:{title:string;url:string;content:string})=>result(r.title,r.url,r.content));break;}
   case 'exa':{const d=await post('https://api.exa.ai/search',{query:input,numResults:5,contents:{text:{maxCharacters:900}}},{'Content-Type':'application/json','x-api-key':key!});rows=(d.results??[]).map((r:{title:string;url:string;text:string})=>result(r.title,r.url,r.text));break;}
   case 'brave':{const d=await get('https://api.search.brave.com/res/v1/web/search?q='+q+'&count=5',{'X-Subscription-Token':key!});rows=(d.web?.results??[]).map((r:{title:string;url:string;description:string})=>result(r.title,r.url,r.description));break;}

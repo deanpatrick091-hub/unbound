@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Video, Search, Hammer, Image as ImageIcon, MessageSquare, Plus, Settings, Users } from "lucide-react";
+import { Library, Search, Hammer, MessageSquare, Plus, Settings, Users } from "lucide-react";
 
 import { SidebarPins } from '@/components/shell/sidebar-pins';
 import { ConversationItem } from "@/components/shell/conversation-item";
@@ -25,7 +25,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     ? "council"
     : pathname.startsWith("/image-gen")
       ? "image"
-      : pathname.startsWith("/build")
+      : (pathname.startsWith("/build")||pathname.startsWith("/studio"))
         ? "build"
         : "chat";
   const activeId = useMemo(() => {
@@ -48,11 +48,9 @@ export function Sidebar({ onNavigate }: SidebarProps) {
       <div className="mt-5 grid grid-cols-1 gap-1.5 px-3 pb-3">
         <NavTile href="/" icon={Plus} label="New chat" active={pathname === "/" || pathname.startsWith("/c/")} onClick={onNavigate} />
         <NavTile href="/council" icon={Users} label="Council" active={area === "council"} onClick={onNavigate} />
-        <NavTile href="/image-gen" icon={ImageIcon} label="Image Gen" active={area === "image"} onClick={onNavigate} />
-        <NavTile href="/video-gen" icon={Video} label="Videos" active={pathname === "/video-gen"} onClick={onNavigate} />
-        <NavTile href="/plugins" icon={Search} label="Integrations" active={pathname === "/plugins"} onClick={onNavigate} />
-        <NavTile href="/tools" icon={Search} label="Tools" active={pathname === "/tools"} onClick={onNavigate} />
-        <NavTile href="/build" icon={Hammer} label="Build" active={area === "build"} onClick={onNavigate} />
+        <NavTile href="/library" icon={Library} label="Library" active={["/library","/image-gen","/video-gen"].includes(pathname)} onClick={onNavigate} />
+        <NavTile href="/plugins" icon={Search} label="Plugins" active={pathname === "/plugins"} onClick={onNavigate} />
+        <NavTile href="/studio" icon={Hammer} label="Studio" active={area === "build"} onClick={onNavigate} />
       </div>
 
       <SidebarPins onNavigate={onNavigate}/>

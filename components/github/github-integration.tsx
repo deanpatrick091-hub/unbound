@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GitHubStatus } from '@/lib/github/types';
 const labels: Record<GitHubStatus['state'], string> = { SETUP_REQUIRED: 'Setup required', DISCONNECTED: 'Not connected', CONNECTED: 'Connected', RECONNECT_REQUIRED: 'Reconnect required', UNAVAILABLE: 'Could not verify connection' };
-export function GitHubIntegration() {
+export function GitHubIntegration({manageOnly=false}:{manageOnly?:boolean}) {
   const [status, setStatus] = useState<GitHubStatus>();
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [output, setOutput] = useState('');
   const [action, setAction] = useState('repositories'), [query, setQuery] = useState(''), [repository, setRepository] = useState(''), [path, setPath] = useState('README.md'), [ref, setRef] = useState(''), [number, setNumber] = useState('1');
@@ -66,7 +66,7 @@ export function GitHubIntegration() {
       {status?.state === 'UNAVAILABLE' && <button className="platform-button" disabled={busy} onClick={() => void load().catch(e => setError(e.message))}>Retry status</button>}
     </div>
     {status?.verifiedAt && <p className="mt-2 text-xs text-muted-foreground">Last verified {new Date(status.verifiedAt).toLocaleString()}. Use Check connection to verify again.</p>}
-    {status?.state === 'CONNECTED' && <form className="mt-5 grid gap-3 sm:grid-cols-2" onSubmit={e => { e.preventDefault(); run(); }}>
+    {!manageOnly && status?.state === 'CONNECTED' && <form className="mt-5 grid gap-3 sm:grid-cols-2" onSubmit={e => { e.preventDefault(); run(); }}>
       <label className="text-sm">Read tool<select className="platform-input mt-1 w-full" value={action} disabled={busy} onChange={e => { setAction(e.target.value); setOutput(''); }}><option value="repositories">Find repositories</option><option value="file">Read a file or directory</option><option value="issues">List repository issues</option><option value="issue">Read an issue</option></select></label>
       {action === 'repositories' ? <label className="text-sm">Search (blank lists your repositories)<input className="platform-input mt-1 w-full" value={query} maxLength={200} onChange={e => setQuery(e.target.value)} placeholder="topic:react"/></label> : <label className="text-sm">Repository<input required className="platform-input mt-1 w-full" value={repository} maxLength={140} onChange={e => setRepository(e.target.value)} placeholder="owner/repository"/></label>}
       {action === 'file' && <><label className="text-sm">File or directory path<input className="platform-input mt-1 w-full" value={path} maxLength={500} onChange={e => setPath(e.target.value)}/></label><label className="text-sm">Branch or ref (optional)<input className="platform-input mt-1 w-full" value={ref} maxLength={200} onChange={e => setRef(e.target.value)}/></label></>}

@@ -2,6 +2,8 @@ export type ToolKind='chat'|'research'|'reader'|'embeddings'|'image'|'transcript
 export interface Integration {id:string;name:string;kind:ToolKind;model:string;env?:string;optionalKey?:boolean;allowance:string;docs:string;notice?:string;}
 /** Official sources reviewed 2026-09-29. Data APIs are not described as AI models. */
 export const INTEGRATIONS:readonly Integration[]=[
+ {id:'npm',name:'npm',kind:'research',model:'Public package search',allowance:'Public package metadata without an API key. Registry rate limits and usage policies apply. No installs or code execution.',docs:'https://github.com/npm/registry/blob/main/docs/REGISTRY-API.md'},
+ {id:'openlibrary',name:'Open Library',kind:'research',model:'Book search',allowance:'Free public book metadata; anonymous access is limited to 1 request/second. No bulk harvesting.',docs:'https://openlibrary.org/developers/api'},
  {id:'sambanova',name:'SambaNova',kind:'chat',model:'DeepSeek-V3.1 · Llama 3.3 70B · GPT OSS 120B',env:'SAMBANOVA_API_KEY',allowance:'No-card Free tier: 20 RPM, 20 requests/day and 200k tokens/day per listed model.',docs:'https://docs.sambanova.ai/docs/en/models/rate-limits'},
  {id:'cohere',name:'Cohere',kind:'chat',model:'north-mini-code-1-0',env:'COHERE_API_KEY',allowance:'North Mini Code: free within key rate limits. Trial key: 1,000 calls/month. Confirm permitted production use before enabling.',docs:'https://docs.cohere.com/docs/north-mini-code-1.0'},
  {id:'tavily',name:'Tavily',kind:'research',model:'Basic Search',env:'TAVILY_API_KEY',allowance:'1,000 credits/month; basic search uses one credit. Keep pay-as-you-go disabled.',docs:'https://docs.tavily.com/documentation/api-credits'},

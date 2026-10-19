@@ -1,7 +1,9 @@
+import {comfyConfig,generateComfyVideo} from '@/lib/videos/comfy';
 import 'server-only';
 import {getProviderConfig} from '@/lib/ai/providers';
-export function videoAvailable(){return !!getProviderConfig('huggingface');}
+export function videoAvailable(){return !!comfyConfig()||!!getProviderConfig('huggingface');}
 export async function generateVideo(prompt:string,aspectRatio:'16:9'|'9:16',signal:AbortSignal){
+ if(comfyConfig())return generateComfyVideo(prompt,signal);
  const config=getProviderConfig('huggingface');if(!config||config.kind!=='openai-compatible'||!config.apiKey)throw Error('Video generation is unavailable.');
  const {InferenceClient}=await import('@huggingface/inference');
  const client=new InferenceClient(config.apiKey);const model='Wan-AI/Wan2.1-T2V-1.3B';

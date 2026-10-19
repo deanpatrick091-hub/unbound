@@ -5,7 +5,7 @@ export const CHAT_TOOLS=[
  {id:'vercel-domains',label:'Domain lookup'}, {id:'wikimedia',label:'Wikipedia'},
  {id:'crossref',label:'Crossref'}, {id:'openalex',label:'OpenAlex'},
  {id:'semantic',label:'Semantic Scholar'}, {id:'arxiv',label:'arXiv'},
- {id:'jina',label:'Read webpage'},
+ {id:'jina',label:'Read webpage'}, {id:'npm',label:'npm packages'}, {id:'openlibrary',label:'Open Library'},
 ] as const;
 export type ChatToolId=typeof CHAT_TOOLS[number]['id'];
 export interface ChatToolOptions {tool?:ChatToolId;communityConsent?:boolean;aspectRatio?:'16:9'|'9:16'}

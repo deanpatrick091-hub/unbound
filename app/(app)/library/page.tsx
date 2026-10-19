@@ -1,0 +1,7 @@
+import Link from 'next/link';
+import {getSession} from '@/lib/auth/session';
+export default async function Library(){
+ const {supabase,user}=await getSession();
+ const [images,videos]=await Promise.all([supabase.from('project_assets').select('id',{count:'exact',head:true}).eq('owner_id',user!.id).is('history_deleted_at',null),supabase.from('video_jobs').select('id',{count:'exact',head:true}).eq('owner_id',user!.id).eq('status','complete').is('hidden_at',null)]);
+ return <main className="flex-1 overflow-auto p-6 sm:p-10"><div className="mx-auto max-w-4xl"><h1 className="text-3xl font-semibold tracking-tight">Library</h1><p className="mt-2 text-sm text-muted-foreground">Your saved creations, ready to use again.</p><div className="mt-8 grid gap-4 sm:grid-cols-2">{[{href:'/image-gen',name:'Images',count:images.count,error:images.error,description:'Generate, download and save images to projects.'},{href:'/video-gen',name:'Videos',count:videos.count,error:videos.error,description:'Manage generations and play saved videos.'}].map(item=><Link key={item.href} href={item.href} className="rounded-2xl border bg-surface/30 p-6 hover:bg-raised focus-visible:ring-2"><h2 className="text-xl">{item.name}</h2><p className="mt-2 text-sm text-muted-foreground">{item.description}</p><p className="mt-6 text-xs">{item.error?'Open to retry loading history':`${item.count??0} saved`}</p></Link>)}</div><Link href="/studio" className="platform-button mt-6">Open Studio projects</Link></div></main>;
+}
