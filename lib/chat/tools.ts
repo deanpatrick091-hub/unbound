@@ -1,3 +1,4 @@
+import type {TextAttachment} from '@/lib/chat/attachments';
 /** Public metadata only: no credentials and no execution code. */
 export const CHAT_TOOLS=[
  {id:'image',label:'Create image'}, {id:'video',label:'Create video'},
@@ -8,7 +9,7 @@ export const CHAT_TOOLS=[
  {id:'jina',label:'Read webpage'}, {id:'npm',label:'npm packages'}, {id:'openlibrary',label:'Open Library'},
 ] as const;
 export type ChatToolId=typeof CHAT_TOOLS[number]['id'];
-export interface ChatToolOptions {tool?:ChatToolId;communityConsent?:boolean;aspectRatio?:'16:9'|'9:16'}
+export interface ChatToolOptions {attachments?:TextAttachment[];tool?:ChatToolId;communityConsent?:boolean;aspectRatio?:'16:9'|'9:16'}
 export function naturalMediaTool(text:string):ChatToolId|undefined{
  if(/^\s*(?:please\s+)?(?:generate|create|make|draw)\s+(?:me\s+)?(?:an?\s+)?(?:image|picture|photo|illustration)\b/i.test(text))return 'image';
  if(/^\s*(?:please\s+)?(?:generate|create|make)\s+(?:me\s+)?(?:an?\s+)?(?:video|clip)\b/i.test(text))return 'video';

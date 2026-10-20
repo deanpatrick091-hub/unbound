@@ -1,3 +1,4 @@
+import {parseAttachments} from '@/lib/chat/attachments';
 import {CHAT_TOOLS,type ChatToolOptions} from '@/lib/chat/tools';
 import { CHAT_LIMITS, type ChatHistoryTurn, type ChatRequestBody } from "@/lib/chat/types";
 
@@ -48,7 +49,11 @@ export function parseChatRequest(body: unknown): ParseResult<ChatRequestBody> {
   if(body.tools!==undefined){
     const t=body.tools;
     if(!isRecord(t)||t.tool!==undefined&&!CHAT_TOOLS.some(v=>v.id===t.tool)||t.communityConsent!==undefined&&typeof t.communityConsent!=='boolean'||t.aspectRatio!==undefined&&!['16:9','9:16'].includes(String(t.aspectRatio)))return {ok:false,message:'Invalid tool settings.'};
-    tools={tool:t.tool as ChatToolOptions['tool'],communityConsent:t.communityConsent===true,aspectRatio:t.aspectRatio as ChatToolOptions['aspectRatio']};
+    let attachments:ReturnType<typeof parseAttachments>=undefined;
+    try { attachments=parseAttachments(t.attachments); }
+    catch(error){ return {ok:false,message:error instanceof Error?error.message:'Invalid attachment.'}; }
+    if(t.tool&&attachments?.length)return {ok:false,message:'Remove the selected tool to ask about attached files.'};
+    tools={...(attachments?{attachments}:{}),tool:t.tool as ChatToolOptions['tool'],communityConsent:t.communityConsent===true,aspectRatio:t.aspectRatio as ChatToolOptions['aspectRatio']};
   }
   const content = parseContent(body.content);
   if (!content.ok) return content;

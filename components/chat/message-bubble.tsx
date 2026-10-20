@@ -1,3 +1,4 @@
+import {splitAttachments} from '@/lib/chat/attachments';
 import {splitArtifact} from '@/lib/chat/tools';
 import {MediaArtifact} from '@/components/chat/media-artifact';
 import { memo } from "react";
@@ -18,10 +19,12 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming 
   const isPending = !isUser && isStreaming && message.content.length === 0;
 
   if (isUser) {
+    const attached=splitAttachments(message.content);
     return (
       <article aria-label="You" className="flex justify-end animate-rise-in">
         <div className="message-user max-w-[85%] rounded-2xl rounded-br-md px-4 py-3 text-base leading-relaxed whitespace-pre-wrap break-words sm:max-w-[72%]">
-          {message.content}
+          {attached.prompt}
+          {attached.files.map((file,index)=><details key={index} className="mt-3 rounded-lg border p-2 text-sm"><summary className="cursor-pointer">{file.name}</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-xs">{file.text}</pre></details>)}
         </div>
       </article>
     );

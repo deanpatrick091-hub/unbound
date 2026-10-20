@@ -16,3 +16,12 @@ test('persisted media references round-trip and reject URLs, traversal and arbit
  const a={kind:'image-job',id};assert.deepEqual(splitArtifact('Queued'+artifactText(a)),{text:'Queued',artifact:a});
  for(const value of [{kind:'image',id:'https://attacker.example'},{kind:'script',id},{kind:'video',id:'../../secret'}])assert.equal(splitArtifact('\n\n```unbound-media\n'+JSON.stringify(value)+'\n```').artifact,undefined);
 });
+
+import {parseAttachments,withAttachments,splitAttachments} from '../lib/chat/attachments.ts';
+test('attachments validate limits, persist readable source and cannot accompany a tool request',()=>{
+ const files=[{name:'notes.txt',text:'sample source'}];
+ assert.deepEqual(splitAttachments(withAttachments('Summarize',files)),{prompt:'Summarize',files});
+ for(const invalid of [[{name:'../secret.txt',text:'x'}],[{name:'run.exe',text:'x'}],[{name:'a.txt',text:'x'.repeat(40001)}],[{name:'a.txt',text:'\0'}],Array(4).fill(files[0])])assert.throws(()=>parseAttachments(invalid));
+ assert.equal(parseChatRequest({content:'Read these',tools:{attachments:files}}).ok,true);
+ assert.equal(parseChatRequest({content:'Read these',tools:{tool:'github',attachments:files}}).ok,false);
+});

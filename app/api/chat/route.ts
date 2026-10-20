@@ -1,3 +1,4 @@
+import {withAttachments} from '@/lib/chat/attachments';
 import {isSameOrigin} from '@/lib/auth/same-origin';
 import {executeChatTool} from '@/lib/chat/tool-executor';
 import {naturalMediaTool} from '@/lib/chat/tools';
@@ -101,7 +102,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           conversationId: conversation.id,
           userId: user.id,
           role: "user",
-          content,
+          content: withAttachments(content, parsed.data.retry ? undefined : parsed.data.tools?.attachments),
         });
         userMessageId = saved.id;
       }
@@ -123,7 +124,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     // Ephemeral mode: context comes from the client's own copy of the thread.
     const fallback = parsed.data.retry === true ? [] : (parsed.data.history ?? []);
     turns = fallback.filter((t) => t.content.length > 0).map((t) => ({ role: t.role, content: t.content }));
-    if (content !== null) turns.push({ role: "user", content });
+    if (content !== null) turns.push({ role: "user", content: withAttachments(content, parsed.data.retry ? undefined : parsed.data.tools?.attachments) });
   }
 
   const last = turns[turns.length - 1];
@@ -169,9 +170,9 @@ export async function POST(request: NextRequest): Promise<Response> {
 
         // A generic chat retry must not duplicate media submissions or external operations.
         const options=parsed.data.retry?undefined:parsed.data.tools;
-        const tool=parsed.data.retry?undefined:options?.tool??naturalMediaTool(last.content);
+        const tool=parsed.data.retry?undefined:options?.tool??(options?.attachments?.length?undefined:naturalMediaTool(content??last.content));
         if(tool){
-          text=await executeChatTool(request,last.content,{...options,tool},model);
+          text=await executeChatTool(new Request(request.url,{method:"POST",headers:request.headers,signal:AbortSignal.any([abort.signal,request.signal])}),content??last.content,{...options,tool},model);
           send({type:'text',text});
         } else for await (const event of streamWithFallback({
           model,

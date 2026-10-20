@@ -41,6 +41,7 @@ export function Composer({
 }: ComposerProps) {
   const { models } = useShell();
   const [tools,setTools]=useState<ChatToolOptions>({tool:initialTool});
+  const [readingFiles,setReadingFiles]=useState(false);
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const labelId = useId();
@@ -48,12 +49,12 @@ export function Composer({
 
   const trimmed = value.trim();
   const isTooLong = trimmed.length > maxLength;
-  const canSend = trimmed.length > 0 && !isBusy && !isTooLong && (enableTools&&!!tools.tool||models.some(m => m.id === model));
+  const canSend = trimmed.length > 0 && !isBusy && !readingFiles && !isTooLong && !(enableTools&&tools.tool&&tools.attachments?.length) && (enableTools&&!!tools.tool||models.some(m => m.id === model));
 
   const submit = () => {
     if (!canSend) return;
     onSend(trimmed,enableTools?tools:undefined);
-    setTools(t=>({...t,communityConsent:false}));
+    setTools(t=>({...t,communityConsent:false,attachments:undefined}));
     setValue("");
     const el = textareaRef.current;
     if (el) {
@@ -112,7 +113,7 @@ export function Composer({
           aria-invalid={isTooLong || undefined}
           className="scrollbar-thin block max-h-[220px] w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-[15px] leading-relaxed text-foreground outline-none placeholder:text-subtle"
         />
-        {enableTools&&<ToolControls value={tools} onChange={setTools} prompt={value} busy={isBusy}/>}
+        {enableTools&&<ToolControls value={tools} onChange={setTools} prompt={value} busy={isBusy||readingFiles} onReadingChange={setReadingFiles}/>}
         <div className="flex items-center justify-between gap-2 px-2 pb-2">
           <ModelSelect value={model} onChange={onModelChange} models={models} disabled={isBusy} />
           <div className="flex items-center gap-2">

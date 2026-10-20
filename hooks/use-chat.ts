@@ -1,5 +1,6 @@
 "use client";
 
+import {withAttachments} from '@/lib/chat/attachments';
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -207,7 +208,7 @@ export function useChat(options: UseChatOptions): UseChatResult {
     async (content: string, tools?: ChatToolOptions) => {
       const trimmed = content.trim();
       if (!trimmed || isBusy) return;
-      const user = createMessage("user", trimmed);
+      const user = createMessage("user", withAttachments(trimmed,tools?.attachments));
       await run(
         {
           conversationId: conversationRef.current ?? undefined,

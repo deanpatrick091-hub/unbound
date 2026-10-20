@@ -52,7 +52,7 @@ export async function GET(request: Request) {
     if (newToken) await revokeGitHubToken(newToken);
     cookieStore.set(OAUTH_COOKIE, '', { httpOnly: true, secure: githubConfiguration().secure, sameSite: 'lax', path: '/api/integrations/github/callback', maxAge: 0 });
   }
-  const response = NextResponse.redirect(new URL(`/tools?github=${result}`, origin), 303);
+  const response = NextResponse.redirect(new URL(`/plugins?github=${result}`, origin), 303);
   Object.entries(privateHeaders).forEach(([key, value]) => response.headers.set(key, value));
   return response;
 }

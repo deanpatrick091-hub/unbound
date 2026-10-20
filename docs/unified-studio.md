@@ -8,8 +8,10 @@ This is an incremental upgrade of Unbound, not a replacement application.
 - Public repository/domain reads, Wikipedia, Crossref, OpenAlex, Semantic Scholar, arXiv, Jina Reader, npm and Open Library use existing authenticated request limits and fixed server adapters.
 - GitHub uses the existing per-user encrypted OAuth connection and read-only MCP tool allowlist. Account connection is checked before planning; resource identifiers must be present in the user's message. No write operations or autonomous follow-up tool calls.
 - Image/video API handlers are shared with chat. Existing provider routing, consent, owner checks and history remain intact. Successful media references persist in assistant messages and reopen in chat. Queue polling does not resubmit generation.
-- Plugins is the integration directory; Studio reuses existing Build projects; Library links to saved image/video workspaces. Existing `/build`, `/image-gen`, `/video-gen` URLs remain valid. `/tools` redirects to Studio.
+- Plugins is the integration directory; Studio reuses existing Build projects; Library links to saved image/video workspaces. Existing `/build`, `/image-gen`, `/video-gen` URLs remain valid. `/tools` redirects to Studio while legacy GitHub callback results go to Plugins.
 - npm public package search and Open Library book metadata adapters added. No API key, installation or code execution involved.
+
+- Chat supports up to three TXT, Markdown, CSV or JSON attachments (40 KB per upload; 100,000 characters combined), stored with the conversation. Attached content is source data and cannot be combined with a selected external tool. PDF, Office, archive and image/video attachments are not yet supported.
 
 ## Self-hosted video option
 
@@ -49,7 +51,7 @@ Official sources reviewed 2026-10-19:
 - TypeScript: passed after `next typegen`.
 - Lint: passed.
 - Production build: passed.
-- Automated tests: 91 passed, including media reference validation, explicit tool consent, read-only selection, ComfyUI request/poll/download contract using fixtures, credential failures and existing OAuth/image tests.
+- Automated tests: 96 passed, including media reference validation, explicit tool consent, read-only selection, ComfyUI request/poll/download contract using fixtures, credential failures and existing OAuth/image tests.
 - Real npm request: 5 results; real Open Library request: 5 results.
 - Previous production AI Horde image generation/persistence/download test remains documented in `docs/image-generation.md`.
 - New signed-in chat UI flow: pending Preview verification.
@@ -58,4 +60,4 @@ Official sources reviewed 2026-10-19:
 
 ## Not yet complete
 
-This checkpoint does not implement Slack/Google personal-account OAuth, general attachment parsing, complete media editing/enhancement, or unlimited-duration self-hosted jobs. Specialist integrations not yet in chat retain their existing workspace rather than pretending to work through chat. No production schema changes are required by this checkpoint.
+This checkpoint does not implement Slack/Google personal-account OAuth, PDF/Office/archive/media attachment parsing, complete media editing/enhancement, or unlimited-duration self-hosted jobs. Specialist integrations not yet in chat retain their existing workspace rather than pretending to work through chat. No production schema changes are required by this checkpoint.

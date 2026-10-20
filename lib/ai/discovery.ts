@@ -113,7 +113,7 @@ async function discover(provider: ProviderId): Promise<ModelOption[]> {
     (m.output_modalities ?? m.architecture?.output_modalities ?? ["text"]).includes("text"));
   const filtered = (provider === "openrouter" || provider === "kilo") ? chat.filter(m => hasZeroPricing(m.pricing) && (provider!=="kilo" || m.id?.endsWith(":free") || m.id==="kilo-auto/free")) : chat;
   const models = filtered.filter(m => m.id !== OPENROUTER_FREE_ROUTER_ID).map(m => option(provider, m.id!, m.name?.replace(/\s*\(free\)\s*$/i, ""), m.context_window ?? m.context_length ?? m.max_context_length ?? m.providers?.find(p => p.status === "live")?.context_length, m.max_completion_tokens ?? m.top_provider?.max_completion_tokens ?? undefined)).sort((a,b) => a.label.localeCompare(b.label));
-  if (provider === "huggingface") for (const model of models) model.description = "$0.10 monthly free credit shared across models; stops when exhausted.";
+  if (provider === "huggingface") for (const model of models) model.description = "Requires inference credit. Free accounts currently have no included monthly credits; provider preserved for configured accounts.";
   if (provider === "mistral") for (const model of models) model.description = "Included monthly Free-mode allowance; stops when exhausted.";
   return provider === "openrouter" ? [router(), ...models] : models;
 }
