@@ -1,4 +1,5 @@
 import 'server-only';
+import {searchTavily} from '@/lib/integrations/tavily';
 import {boundedText,integrationConfig,IntegrationError,markIntegration,providerFetch} from '@/lib/integrations/server';
 export interface ResearchResult {title:string;url:string;excerpt:string;}
 export interface ToolResult {content:string;sources?:ResearchResult[];vectors?:number[][];jobId?:string;src?:string;pending?:boolean;}
@@ -9,6 +10,7 @@ const markdown=(rows:ResearchResult[])=>rows.map((r,i)=>`${i+1}. ${r.title}\n${r
 const arxivCache=new Map<string,{until:number;value:ToolResult}>();let arxivNext=0;let libraryNext=0;
 export async function runResearch(id:string,input:string,signal?:AbortSignal):Promise<ToolResult>{
  if(!input.trim()||input.length>4000)throw new IntegrationError(400,'Use between 1 and 4,000 characters.');
+ if(id==='tavily')return searchTavily(input,signal);
  const {key}=integrationConfig(id);const q=encodeURIComponent(input.trim());
  const auth:Record<string,string>=key?{Authorization:'Bearer '+key}:{};
  const headers:Record<string,string>={'Content-Type':'application/json',...auth};
@@ -22,7 +24,6 @@ export async function runResearch(id:string,input:string,signal?:AbortSignal):Pr
    const d=await get('https://openlibrary.org/search.json?q='+q+'&limit=5&fields=key,title,author_name,first_publish_year',{'User-Agent':'UnboundBookSearch/1.0 (https://unbound-lilac.vercel.app)'});
    rows=(d.docs??[]).map((r:{key:string;title:string;author_name?:string[];first_publish_year?:number})=>result(r.title,/^\/works\/OL[0-9]+W$/.test(r.key)?'https://openlibrary.org'+r.key:'https://openlibrary.org',((r.author_name??[]).slice(0,3).join(', '))+(r.first_publish_year?' · '+r.first_publish_year:'')));break;
   }
-  case 'tavily':{const d=await post('https://api.tavily.com/search',{query:input,search_depth:'basic',max_results:5,include_answer:false});rows=(d.results??[]).map((r:{title:string;url:string;content:string})=>result(r.title,r.url,r.content));break;}
   case 'exa':{const d=await post('https://api.exa.ai/search',{query:input,numResults:5,contents:{text:{maxCharacters:900}}},{'Content-Type':'application/json','x-api-key':key!});rows=(d.results??[]).map((r:{title:string;url:string;text:string})=>result(r.title,r.url,r.text));break;}
   case 'brave':{const d=await get('https://api.search.brave.com/res/v1/web/search?q='+q+'&count=5',{'X-Subscription-Token':key!});rows=(d.web?.results??[]).map((r:{title:string;url:string;description:string})=>result(r.title,r.url,r.description));break;}
   case 'serper':{const d=await post('https://google.serper.dev/search',{q:input,num:5},{'Content-Type':'application/json','X-API-KEY':key!});rows=(d.organic??[]).map((r:{title:string;link:string;snippet:string})=>result(r.title,r.link,r.snippet));break;}

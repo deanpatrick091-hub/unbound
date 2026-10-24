@@ -9,7 +9,8 @@ export function integrationConfig(id:string){
  const spec=INTEGRATIONS.find(p=>p.id===id);if(!spec)throw new IntegrationError(400,'Choose a supported integration.');
  const value=spec.env?process.env[spec.env]?.trim():undefined;
  const key=value&&value.length>=8&&!/\s/.test(value)?value:undefined;
- const confirmed=process.env[id.toUpperCase()+'_FREE_TIER_CONFIRMED']==='true';
+ // Tavily is explicitly enabled by its server key; account billing stays owner-controlled.
+ const confirmed=id==='tavily'||process.env[id.toUpperCase()+'_FREE_TIER_CONFIRMED']==='true';
  const configured=!spec.env||!!spec.optionalKey||!!key&&confirmed;
  // An optional key is never used against a possibly paid account without confirmation.
  return {spec,key:confirmed?key:undefined,configured};

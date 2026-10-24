@@ -35,3 +35,10 @@ test('attached source persists but cannot trigger implicit media execution',asyn
  assert.match(await r.text(),/Normal reply/);assert.equal(f.tools.length,0);assert.equal(f.models,1);
  assert.match(f.messages[0].content,/notes.txt/);
 });
+
+test('explicit and current-information searches use the authenticated tool path once; failed usage checks block them',async()=>{
+ const f=setup();
+ let r=await POST(request({content:'What is the latest news?'}));await r.text();assert.equal(f.tools[0].options.tool,'tavily');assert.equal(f.tools.length,1);assert.equal(f.models,0);
+ f.messages=[];r=await POST(request({content:'Scotland tourism',tools:{tool:'tavily'}}));await r.text();assert.equal(f.tools.length,2);
+ f.limit={allowed:true,degraded:true};r=await POST(request({content:'Search the web for news'}));assert.equal(r.status,503);assert.equal(f.tools.length,2);
+});

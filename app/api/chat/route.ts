@@ -1,7 +1,7 @@
 import {withAttachments} from '@/lib/chat/attachments';
 import {isSameOrigin} from '@/lib/auth/same-origin';
 import {executeChatTool} from '@/lib/chat/tool-executor';
-import {naturalMediaTool} from '@/lib/chat/tools';
+import {selectedChatTool} from '@/lib/chat/tools';
 import type { NextRequest } from "next/server";
 
 import { errorResponse, limitResponse, NDJSON_HEADERS } from "@/lib/api/responses";
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   // limiter lets the request through (logged); an over-budget verdict does not.
   const limit = await consumeRequest(supabase, "chat");
   if (!limit.allowed) return limitResponse(limit);
-  if(limit.degraded&&(!parsed.data.retry&&(parsed.data.tools?.tool||naturalMediaTool(content??''))))return errorResponse(503,"upstream_error","Tool usage checks are temporarily unavailable.");
+  if(limit.degraded&&(!parsed.data.retry&&selectedChatTool(content??'',parsed.data.tools)))return errorResponse(503,"upstream_error","Tool usage checks are temporarily unavailable.");
 
   // Persistence is best-effort: if the database can't store this turn, the
   // reply is still generated and streamed, just not saved.
@@ -170,7 +170,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
         // A generic chat retry must not duplicate media submissions or external operations.
         const options=parsed.data.retry?undefined:parsed.data.tools;
-        const tool=parsed.data.retry?undefined:options?.tool??(options?.attachments?.length?undefined:naturalMediaTool(content??last.content));
+        const tool=parsed.data.retry?undefined:selectedChatTool(content??last.content,options);
         if(tool){
           text=await executeChatTool(new Request(request.url,{method:"POST",headers:request.headers,signal:AbortSignal.any([abort.signal,request.signal])}),content??last.content,{...options,tool},model);
           send({type:'text',text});

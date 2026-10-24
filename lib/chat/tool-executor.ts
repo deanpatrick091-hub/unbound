@@ -1,4 +1,5 @@
 import 'server-only';
+import {answerWithWebSearch} from '@/lib/chat/web-search';
 import {createImages} from '@/lib/images/handlers';
 import {createVideos} from '@/lib/videos/handlers';
 import {runPlugin,PluginError} from '@/lib/plugins/server';
@@ -13,6 +14,7 @@ function mediaRequest(request:Request,body:unknown){return new Request(request.u
 function safeError(data:unknown){const d=data as {error?:string|{message?:string}};return typeof d?.error==='string'?d.error:d?.error?.message??'The tool could not complete this request.';}
 /** One bounded operation. External content is never passed back to the tool planner. */
 export async function executeChatTool(request:Request,prompt:string,options:ChatToolOptions,model:string):Promise<string>{
+ if(options.tool==='tavily')return answerWithWebSearch(prompt,model,request.signal);
  if(options.tool==='image'||options.tool==='video'){
   const image=options.tool==='image';
   const response=await (image?createImages(mediaRequest(request,{prompt,communityConsent:options.communityConsent===true})):createVideos(mediaRequest(request,{prompt,aspectRatio:options.aspectRatio??'16:9'})));
